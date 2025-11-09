@@ -1,61 +1,60 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { page } from '$app/stores';
   import { supabase } from '$lib/supabase';
-  import { createDevicePairingCode, type DevicePairingCode } from '@home-dashboard/database';
+  import { createDeviceTokenDirect } from '@home-dashboard/database';
 
-  let pairingCode = $state<DevicePairingCode | null>(null);
   let loading = $state(true);
   let error = $state('');
-  let countdown = $state(0);
-  let intervalId: ReturnType<typeof setInterval> | null = null;
+  let status = $state('Checking authentication...');
 
   onMount(async () => {
-    await generateCode();
+    await handleAutomaticPairing();
   });
 
-  async function generateCode() {
-    loading = true;
-    error = '';
-
+  async function handleAutomaticPairing() {
     try {
-      // Check if user is authenticated
-      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      // Get device info from URL params
+      const deviceId = $page.url.searchParams.get('deviceId');
+      const deviceName = $page.url.searchParams.get('deviceName');
 
-      if (authError || !user) {
-        error = 'Please log in to generate a pairing code.';
+      if (!deviceId) {
+        error = 'Missing device information. Please try again from your Electron app.';
         loading = false;
         return;
       }
 
-      pairingCode = await createDevicePairingCode(supabase, 10); // 10 minutes
+      status = 'Checking authentication...';
 
-      // Start countdown
-      const expiresAt = new Date(pairingCode.expires_at).getTime();
-      if (intervalId) {
-        clearInterval(intervalId);
+      // Check if user is authenticated
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+      if (authError || !user) {
+        error = 'Please log in to pair your device.';
+        loading = false;
+        return;
       }
 
-      intervalId = setInterval(() => {
-        const now = Date.now();
-        const remaining = Math.max(0, Math.floor((expiresAt - now) / 1000));
-        countdown = remaining;
+      status = 'Generating device token...';
 
-        if (remaining === 0 && intervalId) {
-          clearInterval(intervalId);
-          pairingCode = null;
-        }
+      // Create device token directly
+      const { token } = await createDeviceTokenDirect(
+        supabase,
+        deviceId,
+        deviceName || 'Electron Device'
+      );
+
+      status = 'Pairing complete! Redirecting...';
+
+      // Redirect back to Electron app with token
+      setTimeout(() => {
+        window.location.href = `homedashboard://paired?token=${encodeURIComponent(token)}`;
       }, 1000);
     } catch (err: any) {
-      error = err.message || 'Failed to generate pairing code';
-    } finally {
+      console.error('Pairing error:', err);
+      error = err.message || 'Failed to pair device. Please try again.';
       loading = false;
     }
-  }
-
-  function formatTimeRemaining(seconds: number): string {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
   }
 </script>
 
@@ -66,7 +65,7 @@
 <div class="pairing-page">
   <div class="pairing-card">
     <div class="logo">🏠</div>
-    <h1>Device Pairing</h1>
+    <h1>Automatic Device Pairing</h1>
 
     {#if error}
       <div class="error-message">
@@ -80,35 +79,21 @@
     {:else if loading}
       <div class="loading-state">
         <div class="spinner"></div>
-        <p>Generating pairing code...</p>
+        <p>{status}</p>
       </div>
-    {:else if pairingCode}
-      <div class="code-section">
-        <p class="instructions">
-          Enter this code in your Electron app:
-        </p>
-
-        <div class="code-display">
-          {pairingCode.code}
-        </div>
-
-        <div class="timer">
-          ⏱️ Expires in {formatTimeRemaining(countdown)}
-        </div>
-
-        <button class="btn-secondary" onclick={generateCode}>
-          Generate New Code
-        </button>
+    {:else}
+      <div class="success-state">
+        <div class="success-icon">✅</div>
+        <p>Device paired successfully!</p>
+        <p class="success-subtitle">Your Electron app should open automatically.</p>
       </div>
     {/if}
 
     <div class="help-text">
       <p>
-        <strong>How to use:</strong><br />
-        1. Keep this browser tab open<br />
-        2. Go to your Electron app<br />
-        3. Enter the code shown above<br />
-        4. Your device will be paired automatically
+        <strong>What's happening?</strong><br />
+        We're automatically pairing your device with your account.
+        Once complete, you'll be redirected back to the Electron app.
       </p>
     </div>
   </div>
@@ -184,38 +169,31 @@
 
   .loading-state p {
     color: #666;
-    font-size: 0.875rem;
-  }
-
-  .code-section {
-    margin-bottom: 2rem;
-  }
-
-  .instructions {
-    margin: 0 0 1.5rem 0;
-    color: #666;
     font-size: 1rem;
+    font-weight: 500;
   }
 
-  .code-display {
-    font-size: 3.5rem;
-    font-weight: 700;
-    font-family: 'Courier New', monospace;
-    color: #667eea;
-    letter-spacing: 0.1em;
-    padding: 1.5rem;
-    background: #f7f8ff;
-    border: 3px dashed #667eea;
-    border-radius: 16px;
-    margin: 0 auto 1.5rem auto;
-    text-transform: uppercase;
+  .success-state {
+    padding: 2rem 0;
+    text-align: center;
   }
 
-  .timer {
+  .success-icon {
+    font-size: 4rem;
+    margin-bottom: 1rem;
+  }
+
+  .success-state p {
+    margin: 0.5rem 0;
+    color: #10b981;
     font-size: 1.25rem;
     font-weight: 600;
-    color: #666;
-    margin-bottom: 2rem;
+  }
+
+  .success-subtitle {
+    color: #666 !important;
+    font-size: 0.875rem !important;
+    font-weight: 400 !important;
   }
 
   .btn-primary {
@@ -235,23 +213,6 @@
   .btn-primary:hover {
     transform: translateY(-2px);
     box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
-  }
-
-  .btn-secondary {
-    padding: 0.75rem 1.5rem;
-    background: white;
-    color: #667eea;
-    border: 2px solid #667eea;
-    border-radius: 8px;
-    font-size: 0.875rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.2s;
-  }
-
-  .btn-secondary:hover {
-    background: #f7f8ff;
-    transform: translateY(-1px);
   }
 
   .help-text {

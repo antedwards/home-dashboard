@@ -13,6 +13,18 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 let mainWindow: BrowserWindow | null = null;
 let voiceService: VoiceService | null = null;
 
+// Protocol handler for deep linking
+const PROTOCOL = 'homedashboard';
+
+// Make this app the default handler for homedashboard:// links
+if (process.defaultApp) {
+  if (process.argv.length >= 2) {
+    app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [path.resolve(process.argv[1])]);
+  }
+} else {
+  app.setAsDefaultProtocolClient(PROTOCOL);
+}
+
 // Create Supabase client for main process
 const supabase = createSupabaseClient(
   process.env.VITE_SUPABASE_URL!,
@@ -130,15 +142,78 @@ function createWindow() {
   });
 }
 
-app.whenReady().then(() => {
-  createWindow();
+// Handle deep link URLs
+async function handleDeepLink(url: string) {
+  console.log('Deep link received:', url);
 
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
+  // Parse the URL: homedashboard://paired?token=xxx
+  const urlObj = new URL(url);
+
+  if (urlObj.protocol === `${PROTOCOL}:` && urlObj.hostname === 'paired') {
+    const token = urlObj.searchParams.get('token');
+
+    if (token) {
+      try {
+        // Store the token
+        await storeDeviceToken(token);
+
+        // Focus or create window
+        if (mainWindow) {
+          if (mainWindow.isMinimized()) mainWindow.restore();
+          mainWindow.focus();
+          mainWindow.reload();
+        } else {
+          createWindow();
+        }
+      } catch (error) {
+        console.error('Failed to handle deep link:', error);
+      }
+    }
+  }
+}
+
+// Handle deep link on macOS
+app.on('open-url', (event, url) => {
+  event.preventDefault();
+  handleDeepLink(url);
+});
+
+// Prevent multiple instances and handle deep links on Windows/Linux
+const gotTheLock = app.requestSingleInstanceLock();
+
+if (!gotTheLock) {
+  app.quit();
+} else {
+  app.on('second-instance', (event, commandLine, workingDirectory) => {
+    // Someone tried to run a second instance, focus our window and handle the URL
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+
+    // Check if there's a deep link in the command line
+    const url = commandLine.find((arg) => arg.startsWith(`${PROTOCOL}://`));
+    if (url) {
+      handleDeepLink(url);
     }
   });
-});
+
+  app.whenReady().then(() => {
+    createWindow();
+
+    // Check if opened with a deep link (Windows/Linux)
+    const url = process.argv.find((arg) => arg.startsWith(`${PROTOCOL}://`));
+    if (url) {
+      handleDeepLink(url);
+    }
+
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        createWindow();
+      }
+    });
+  });
+}
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {

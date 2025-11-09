@@ -131,6 +131,51 @@ export async function verifyPairingCodeAndCreateToken(
 }
 
 /**
+ * Create a device token directly (for automatic pairing)
+ * This bypasses the pairing code system for streamlined UX
+ */
+export async function createDeviceTokenDirect(
+  client: SupabaseClient,
+  deviceId: string,
+  deviceName: string
+): Promise<{ token: string; deviceToken: DeviceToken }> {
+  // Get current user
+  const {
+    data: { user },
+    error: userError,
+  } = await client.auth.getUser();
+
+  if (userError || !user) {
+    throw new Error('Not authenticated');
+  }
+
+  // Generate a secure random token
+  const token = randomBytes(32).toString('base64url');
+  const tokenHash = createHash('sha256').update(token).digest('hex');
+
+  // Create device token
+  const { data: deviceToken, error: tokenError } = await client
+    .from('device_tokens')
+    .insert({
+      user_id: user.id,
+      device_id: deviceId,
+      device_name: deviceName || `Electron Device`,
+      device_type: 'electron',
+      token_hash: tokenHash,
+      expires_at: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(), // 90 days
+    })
+    .select()
+    .single();
+
+  if (tokenError) throw tokenError;
+
+  return {
+    token, // Return plain token to be stored by Electron
+    deviceToken: deviceToken as DeviceToken,
+  };
+}
+
+/**
  * Verify a device token
  * This is called on every Electron app startup
  */

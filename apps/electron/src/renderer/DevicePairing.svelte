@@ -6,7 +6,16 @@
 
   async function openWebApp() {
     const webAppUrl = import.meta.env.VITE_WEB_APP_URL || 'http://localhost:5173';
-    await window.electron.openExternal(`${webAppUrl}/devices/pair`);
+    const deviceId = await window.electron.getDeviceId();
+    const deviceName = await window.electron.getDeviceName();
+
+    // Pass device info to web app for automatic pairing
+    const params = new URLSearchParams({
+      deviceId,
+      deviceName,
+    });
+
+    await window.electron.openExternal(`${webAppUrl}/devices/pair?${params}`);
   }
 
   async function handlePair() {
@@ -66,13 +75,16 @@
       <h3>How to Pair:</h3>
       <ol>
         <li>Click the button below to open the web app</li>
-        <li>Log in and generate a pairing code</li>
-        <li>Enter the 2-word code below</li>
+        <li>Log in with your account</li>
+        <li>Device will pair automatically!</li>
       </ol>
+      <p class="auto-pair-note">
+        ✨ No code needed - pairing happens automatically
+      </p>
     </div>
 
     <button class="btn-secondary" onclick={openWebApp}>
-      🌐 Open Web App for Pairing
+      🌐 Open Web App for Automatic Pairing
     </button>
 
     {#if success}
@@ -172,6 +184,17 @@
   .instructions li {
     margin-bottom: 0.5rem;
     line-height: 1.5;
+  }
+
+  .auto-pair-note {
+    margin: 1rem 0 0 0;
+    padding: 0.75rem;
+    background: #e0f2fe;
+    border-left: 3px solid #0284c7;
+    border-radius: 4px;
+    font-size: 0.875rem;
+    color: #0369a1;
+    font-weight: 500;
   }
 
   .error-message {
