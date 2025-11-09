@@ -1,64 +1,125 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { createSupabaseClient, verifyDeviceToken } from '@home-dashboard/database';
+  import DevicePairing from './DevicePairing.svelte';
 
   let version = $state('');
   let currentView = $state<'day' | 'week' | 'month'>('week');
+  let isAuthenticated = $state(false);
+  let loading = $state(true);
+  let userId = $state<string | null>(null);
+
+  const supabase = createSupabaseClient(
+    import.meta.env.VITE_SUPABASE_URL,
+    import.meta.env.VITE_SUPABASE_ANON_KEY
+  );
 
   onMount(async () => {
+    // Get app version
     if (window.electron) {
       version = await window.electron.getVersion();
+
+      // Check authentication
+      await checkAuth();
     }
   });
+
+  async function checkAuth() {
+    loading = true;
+
+    try {
+      // Get stored token
+      const token = await window.electron.getDeviceToken();
+
+      if (!token) {
+        isAuthenticated = false;
+        loading = false;
+        return;
+      }
+
+      // Verify token with backend
+      const deviceId = await window.electron.getDeviceId();
+      const result = await verifyDeviceToken(supabase, token, deviceId);
+
+      if (result.valid && result.userId) {
+        isAuthenticated = true;
+        userId = result.userId;
+
+        // TODO: If token needs refresh, show a notification
+        if (result.needsRefresh) {
+          console.log('Token will expire soon, please extend it in the web app');
+        }
+      } else {
+        // Token invalid or expired
+        isAuthenticated = false;
+        await window.electron.clearDeviceToken();
+      }
+    } catch (error) {
+      console.error('Authentication error:', error);
+      isAuthenticated = false;
+    } finally {
+      loading = false;
+    }
+  }
 </script>
 
-<div class="app">
-  <header class="header">
-    <h1>Home Dashboard</h1>
-    <div class="view-switcher">
-      <button
-        class:active={currentView === 'day'}
-        onclick={() => (currentView = 'day')}
-      >
-        Day
-      </button>
-      <button
-        class:active={currentView === 'week'}
-        onclick={() => (currentView = 'week')}
-      >
-        Week
-      </button>
-      <button
-        class:active={currentView === 'month'}
-        onclick={() => (currentView = 'month')}
-      >
-        Month
-      </button>
-    </div>
-  </header>
+{#if loading}
+  <div class="loading-screen">
+    <div class="spinner"></div>
+    <p>Loading...</p>
+  </div>
+{:else if !isAuthenticated}
+  <DevicePairing />
+{:else}
+  <div class="app">
+    <header class="header">
+      <h1>Home Dashboard</h1>
+      <div class="view-switcher">
+        <button
+          class:active={currentView === 'day'}
+          onclick={() => (currentView = 'day')}
+        >
+          Day
+        </button>
+        <button
+          class:active={currentView === 'week'}
+          onclick={() => (currentView = 'week')}
+        >
+          Week
+        </button>
+        <button
+          class:active={currentView === 'month'}
+          onclick={() => (currentView = 'month')}
+        >
+          Month
+        </button>
+      </div>
+    </header>
 
-  <main class="main">
-    {#if currentView === 'day'}
-      <div class="view day-view">
-        <h2>Day View</h2>
-        <p>Day view coming soon...</p>
-      </div>
-    {:else if currentView === 'week'}
-      <div class="view week-view">
-        <h2>Week View</h2>
-        <p>Week view coming soon...</p>
-      </div>
-    {:else if currentView === 'month'}
-      <div class="view month-view">
-        <h2>Month View</h2>
-        <p>Month view coming soon...</p>
-      </div>
-    {/if}
-  </main>
+    <main class="main">
+      {#if currentView === 'day'}
+        <div class="view day-view">
+          <h2>Day View</h2>
+          <p>Day view coming soon...</p>
+        </div>
+      {:else if currentView === 'week'}
+        <div class="view week-view">
+          <h2>Week View</h2>
+          <p>Week view coming soon...</p>
+        </div>
+      {:else if currentView === 'month'}
+        <div class="view month-view">
+          <h2>Month View</h2>
+          <p>Month view coming soon...</p>
+        </div>
+      {/if}
+    </main>
 
-  <footer class="footer">
-    <p>Home Dashboard v{version} • Offline-first family calendar</p>
-  </footer>
-</div>
+    <footer class="footer">
+      <p>Home Dashboard v{version} • Offline-first family calendar</p>
+    </footer>
+  </div>
+{/if}
 
 <style>
   :global(body) {
@@ -68,6 +129,39 @@
       Ubuntu, Cantarell, 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+  }
+
+  .loading-screen {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    background: #f5f5f5;
+  }
+
+  .spinner {
+    width: 50px;
+    height: 50px;
+    border: 4px solid #e0e0e0;
+    border-top: 4px solid #667eea;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    0% {
+      transform: rotate(0deg);
+    }
+    100% {
+      transform: rotate(360deg);
+    }
+  }
+
+  .loading-screen p {
+    margin-top: 1rem;
+    color: #666;
+    font-size: 1.125rem;
   }
 
   .app {

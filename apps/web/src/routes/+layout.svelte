@@ -18,6 +18,7 @@
       <a href="/chores" class:active={$page.url.pathname === '/chores'}>Chores</a>
       <a href="/lists" class:active={$page.url.pathname === '/lists'}>Lists</a>
       <a href="/meals" class:active={$page.url.pathname === '/meals'}>Meals</a>
+      <a href="/devices" class:active={$page.url.pathname === '/devices'}>Devices</a>
     </div>
   </nav>
 
