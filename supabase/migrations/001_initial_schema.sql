@@ -1,7 +1,5 @@
--- Enable UUID extension
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-
 -- Users table (extends Supabase auth.users)
+-- Note: gen_random_uuid() is built-in to Postgres 13+, no extension needed
 CREATE TABLE public.users (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   email TEXT UNIQUE NOT NULL,
@@ -14,7 +12,7 @@ CREATE TABLE public.users (
 
 -- Families table
 CREATE TABLE public.families (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL,
   created_by UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
   created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -23,7 +21,7 @@ CREATE TABLE public.families (
 
 -- Family members junction table
 CREATE TABLE public.family_members (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   family_id UUID NOT NULL REFERENCES public.families(id) ON DELETE CASCADE,
   user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
   role TEXT NOT NULL CHECK (role IN ('admin', 'member', 'child')),
@@ -34,7 +32,7 @@ CREATE TABLE public.family_members (
 
 -- Events table
 CREATE TABLE public.events (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   family_id UUID NOT NULL REFERENCES public.families(id) ON DELETE CASCADE,
   user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
   title TEXT NOT NULL,
@@ -54,7 +52,7 @@ CREATE TABLE public.events (
 
 -- Chores table
 CREATE TABLE public.chores (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   family_id UUID NOT NULL REFERENCES public.families(id) ON DELETE CASCADE,
   title TEXT NOT NULL,
   description TEXT,
@@ -71,7 +69,7 @@ CREATE TABLE public.chores (
 
 -- Lists table
 CREATE TABLE public.lists (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   family_id UUID NOT NULL REFERENCES public.families(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   type TEXT NOT NULL CHECK (type IN ('grocery', 'todo', 'custom')),
@@ -82,7 +80,7 @@ CREATE TABLE public.lists (
 
 -- List items table
 CREATE TABLE public.list_items (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   list_id UUID NOT NULL REFERENCES public.lists(id) ON DELETE CASCADE,
   content TEXT NOT NULL,
   checked BOOLEAN DEFAULT FALSE,

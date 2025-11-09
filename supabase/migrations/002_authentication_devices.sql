@@ -3,7 +3,7 @@ ALTER TABLE public.users ADD COLUMN is_admin BOOLEAN DEFAULT FALSE;
 
 -- Create invitations table for admin-only signup
 CREATE TABLE public.invitations (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   email TEXT UNIQUE NOT NULL,
   invited_by UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
   expires_at TIMESTAMPTZ NOT NULL,
@@ -14,7 +14,7 @@ CREATE TABLE public.invitations (
 
 -- Device pairing codes table (for Electron authentication)
 CREATE TABLE public.device_pairing_codes (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   code TEXT UNIQUE NOT NULL, -- Two-word code like "apple-mountain"
   user_id UUID REFERENCES public.users(id) ON DELETE CASCADE,
   expires_at TIMESTAMPTZ NOT NULL,
@@ -25,7 +25,7 @@ CREATE TABLE public.device_pairing_codes (
 
 -- Device tokens table (long-lived tokens for Electron)
 CREATE TABLE public.device_tokens (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
   device_id TEXT NOT NULL,
   device_name TEXT,
