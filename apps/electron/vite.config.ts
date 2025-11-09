@@ -37,13 +37,7 @@ export default defineConfig(({ mode }) => {
         },
         preload: {
           input: 'src/main/preload.ts',
-          vite: {
-            build: {
-              outDir: 'dist-electron',
-            },
-          },
         },
-        renderer: {},
       }),
   ],
   resolve: {
