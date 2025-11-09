@@ -1,0 +1,56 @@
+{
+  "name": "@home-dashboard/electron",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Home Dashboard - Desktop Application",
+  "main": "dist-electron/main.js",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build && electron-builder",
+    "preview": "vite preview",
+    "lint": "eslint .",
+    "type-check": "tsc --noEmit",
+    "electron:dev": "vite",
+    "electron:build": "vite build && electron-builder"
+  },
+  "dependencies": {
+    "@home-dashboard/database": "workspace:*",
+    "@home-dashboard/sync": "workspace:*",
+    "@home-dashboard/ui": "workspace:*",
+    "better-sqlite3": "^11.7.0"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^5.0.3",
+    "@types/better-sqlite3": "^7.6.12",
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8",
+    "svelte": "^5.2.9",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.3",
+    "vite-plugin-electron": "^0.28.9",
+    "vite-plugin-electron-renderer": "^0.14.6"
+  },
+  "build": {
+    "appId": "com.homedashboard.app",
+    "productName": "Home Dashboard",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": ["dmg"]
+    },
+    "win": {
+      "target": ["nsis"]
+    },
+    "linux": {
+      "target": ["AppImage"],
+      "category": "Utility"
+    }
+  }
+}

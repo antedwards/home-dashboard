@@ -1,0 +1,23 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "moduleResolution": "bundler",
+    "types": ["@sveltejs/kit", "vite/client"],
+    "isolatedModules": true,
+    "paths": {
+      "$lib": ["./src/lib"],
+      "$lib/*": ["./src/lib/*"],
+      "$components": ["./src/lib/components"],
+      "$components/*": ["./src/lib/components/*"],
+      "$stores": ["./src/lib/stores"],
+      "$stores/*": ["./src/lib/stores/*"],
+      "$utils": ["./src/lib/utils"],
+      "$utils/*": ["./src/lib/utils/*"]
+    }
+  },
+  "include": ["src/**/*.ts", "src/**/*.svelte"],
+  "exclude": ["node_modules", ".svelte-kit", "build"]
+}
