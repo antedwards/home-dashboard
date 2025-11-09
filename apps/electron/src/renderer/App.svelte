@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { createSupabaseClient } from '@home-dashboard/database/browser';
+  import { supabase } from './lib/supabase';
   import {
     DayView,
     WeekView,
@@ -22,11 +22,6 @@
   let voiceActive = $state(false);
   let voiceStatus = $state<string>('');
   let voiceTranscript = $state<string>('');
-
-  const supabase = createSupabaseClient(
-    import.meta.env.VITE_SUPABASE_URL,
-    import.meta.env.VITE_SUPABASE_ANON_KEY
-  );
 
   onMount(async () => {
     // Get app version
