@@ -13,6 +13,14 @@ contextBridge.exposeInMainWorld('electron', {
   getDeviceToken: () => ipcRenderer.invoke('device:getToken'),
   clearDeviceToken: () => ipcRenderer.invoke('device:clearToken'),
 
+  // Auth operations (run in main process)
+  auth: {
+    verifyDeviceToken: (token: string, deviceId: string) =>
+      ipcRenderer.invoke('auth:verifyDeviceToken', token, deviceId),
+    verifyPairingCode: (code: string, deviceId: string, deviceName: string) =>
+      ipcRenderer.invoke('auth:verifyPairingCode', code, deviceId, deviceName),
+  },
+
   // Voice commands
   voice: {
     initialize: (userId: string, familyId: string) =>
@@ -40,6 +48,10 @@ export interface ElectronAPI {
   storeDeviceToken: (token: string) => Promise<void>;
   getDeviceToken: () => Promise<string | null>;
   clearDeviceToken: () => Promise<void>;
+  auth: {
+    verifyDeviceToken: (token: string, deviceId: string) => Promise<{ success: boolean; result?: any; error?: string }>;
+    verifyPairingCode: (code: string, deviceId: string, deviceName: string) => Promise<{ success: boolean; result?: any; error?: string }>;
+  };
   voice: {
     initialize: (userId: string, familyId: string) => Promise<{ success: boolean; error?: string }>;
     start: () => Promise<{ success: boolean; error?: string }>;

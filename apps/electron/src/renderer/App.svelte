@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { createSupabaseClient, verifyDeviceToken } from '@home-dashboard/database';
+  import { createSupabaseClient } from '@home-dashboard/database/browser';
   import {
     DayView,
     WeekView,
@@ -51,31 +51,31 @@
         return;
       }
 
-      // Verify token with backend
+      // Verify token with backend via IPC (runs in main process)
       const deviceId = await window.electron.getDeviceId();
-      const result = await verifyDeviceToken(supabase, token, deviceId);
+      const authResult = await window.electron.auth.verifyDeviceToken(token, deviceId);
 
-      if (result.valid && result.userId) {
+      if (authResult.success && authResult.result?.valid && authResult.result?.userId) {
         isAuthenticated = true;
-        userId = result.userId;
+        userId = authResult.result.userId;
 
         // Get user's family
         const { data: familyMember } = await supabase
           .from('family_members')
           .select('family_id')
-          .eq('user_id', result.userId)
+          .eq('user_id', authResult.result.userId)
           .single();
 
         if (familyMember) {
           // Initialize calendar store
-          await calendarStore.initialize(result.userId, familyMember.family_id);
+          await calendarStore.initialize(authResult.result.userId, familyMember.family_id);
 
           // Initialize voice commands
-          await initializeVoice(result.userId, familyMember.family_id);
+          await initializeVoice(authResult.result.userId, familyMember.family_id);
         }
 
         // TODO: If token needs refresh, show a notification
-        if (result.needsRefresh) {
+        if (authResult.result.needsRefresh) {
           console.log('Token will expire soon, please extend it in the web app');
         }
       } else {

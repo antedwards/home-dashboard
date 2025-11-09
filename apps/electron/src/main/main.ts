@@ -6,11 +6,18 @@ import os from 'os';
 import { randomBytes } from 'crypto';
 import { VoiceService } from './voice';
 import type { VoiceEvent } from './voice';
+import { createSupabaseClient, verifyDeviceToken, verifyPairingCodeAndCreateToken } from '@home-dashboard/database';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 let mainWindow: BrowserWindow | null = null;
 let voiceService: VoiceService | null = null;
+
+// Create Supabase client for main process
+const supabase = createSupabaseClient(
+  process.env.VITE_SUPABASE_URL!,
+  process.env.VITE_SUPABASE_ANON_KEY!
+);
 
 //Token storage path
 const getTokenPath = () => {
@@ -175,6 +182,25 @@ ipcMain.handle('device:getToken', async () => {
 
 ipcMain.handle('device:clearToken', async () => {
   await clearDeviceToken();
+});
+
+// Auth handlers (run in main process to use crypto)
+ipcMain.handle('auth:verifyDeviceToken', async (_, token: string, deviceId: string) => {
+  try {
+    const result = await verifyDeviceToken(supabase, token, deviceId);
+    return { success: true, result };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('auth:verifyPairingCode', async (_, code: string, deviceId: string, deviceName: string) => {
+  try {
+    const result = await verifyPairingCodeAndCreateToken(supabase, code, deviceId, deviceName);
+    return { success: true, result };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
 });
 
 // Voice command handlers

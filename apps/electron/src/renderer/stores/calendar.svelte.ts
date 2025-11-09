@@ -1,4 +1,4 @@
-import { createSupabaseClient, getEvents, createEvent, updateEvent, deleteEvent, type Event } from '@home-dashboard/database';
+import { createSupabaseClient, getEvents, createEvent, updateEvent, deleteEvent, type Event } from '@home-dashboard/database/browser';
 import type { CalendarEvent } from '@home-dashboard/ui';
 
 // Calendar state

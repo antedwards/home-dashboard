@@ -13,9 +13,27 @@ export default defineConfig({
     electron({
       main: {
         entry: 'src/main/main.ts',
+        vite: {
+          build: {
+            outDir: 'dist-electron',
+            rollupOptions: {
+              external: [
+                'electron',
+                'better-sqlite3',
+                'node-record-lpcm16',
+                'whisper-node',
+              ],
+            },
+          },
+        },
       },
       preload: {
         input: 'src/main/preload.ts',
+        vite: {
+          build: {
+            outDir: 'dist-electron',
+          },
+        },
       },
       renderer: {},
     }),
@@ -33,5 +51,11 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    rollupOptions: {
+      external: ['crypto', 'fs', 'path', 'os'],
+    },
+  },
+  optimizeDeps: {
+    exclude: ['crypto', 'fs', 'path', 'os'],
   },
 });

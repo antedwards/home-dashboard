@@ -1,15 +1,8 @@
 <script lang="ts">
-  import { createSupabaseClient, verifyPairingCodeAndCreateToken } from '@home-dashboard/database';
-
   let code = $state('');
   let loading = $state(false);
   let error = $state('');
   let success = $state(false);
-
-  const supabase = createSupabaseClient(
-    import.meta.env.VITE_SUPABASE_URL,
-    import.meta.env.VITE_SUPABASE_ANON_KEY
-  );
 
   async function handlePair() {
     if (!code || code.trim().length === 0) {
@@ -27,16 +20,19 @@
       const deviceId = await window.electron.getDeviceId();
       const deviceName = await window.electron.getDeviceName();
 
-      // Verify code and get token
-      const { token, deviceToken } = await verifyPairingCodeAndCreateToken(
-        supabase,
+      // Verify code and get token via IPC (runs in main process)
+      const authResult = await window.electron.auth.verifyPairingCode(
         cleanCode,
         deviceId,
         deviceName
       );
 
+      if (!authResult.success || !authResult.result) {
+        throw new Error(authResult.error || 'Failed to verify pairing code');
+      }
+
       // Store token securely
-      await window.electron.storeDeviceToken(token);
+      await window.electron.storeDeviceToken(authResult.result.token);
 
       success = true;
 
