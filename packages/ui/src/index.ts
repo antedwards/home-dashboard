@@ -1,9 +1,8 @@
 // Calendar Components
-export { default as CalendarGrid } from './components/CalendarGrid.svelte';
-export { default as EventCard } from './components/EventCard.svelte';
 export { default as DayView } from './components/DayView.svelte';
 export { default as WeekView } from './components/WeekView.svelte';
 export { default as MonthView } from './components/MonthView.svelte';
+export { default as EventModal } from './components/EventModal.svelte';
 
 // Chore Components
 export { default as ChoreList } from './components/ChoreList.svelte';
@@ -26,3 +25,6 @@ export { default as Drawer } from './components/Drawer.svelte';
 
 // Types
 export * from './types';
+
+// Utilities
+export * from './utils/calendar';
