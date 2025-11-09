@@ -19,6 +19,9 @@
   let showEventModal = $state(false);
   let selectedEvent = $state<CalendarEvent | null>(null);
   let initialEventDate = $state<Date | undefined>(undefined);
+  let voiceActive = $state(false);
+  let voiceStatus = $state<string>('');
+  let voiceTranscript = $state<string>('');
 
   const supabase = createSupabaseClient(
     import.meta.env.VITE_SUPABASE_URL,
@@ -66,6 +69,9 @@
         if (familyMember) {
           // Initialize calendar store
           await calendarStore.initialize(result.userId, familyMember.family_id);
+
+          // Initialize voice commands
+          await initializeVoice(result.userId, familyMember.family_id);
         }
 
         // TODO: If token needs refresh, show a notification
@@ -150,6 +156,86 @@
         return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
     }
   }
+
+  async function initializeVoice(userId: string, familyId: string) {
+    try {
+      // Initialize voice service
+      const result = await window.electron.voice.initialize(userId, familyId);
+
+      if (result.success) {
+        // Set up event listener
+        window.electron.voice.onEvent(handleVoiceEvent);
+
+        // Start listening
+        const startResult = await window.electron.voice.start();
+        if (startResult.success) {
+          voiceActive = true;
+          voiceStatus = 'Say "Hey Sausage" to give a command';
+          console.log('✅ Voice commands active');
+        }
+      }
+    } catch (error) {
+      console.error('Failed to initialize voice commands:', error);
+      voiceStatus = 'Voice commands unavailable';
+    }
+  }
+
+  function handleVoiceEvent(event: any) {
+    console.log('Voice event:', event);
+
+    switch (event.type) {
+      case 'wake_word_detected':
+        voiceStatus = '🎤 Listening...';
+        voiceTranscript = '';
+        break;
+      case 'listening_started':
+        voiceStatus = '🎤 Speak now...';
+        break;
+      case 'listening_stopped':
+        voiceStatus = '⏳ Processing...';
+        break;
+      case 'speech_recognized':
+        voiceTranscript = event.transcript;
+        voiceStatus = `📝 "${event.transcript}"`;
+        break;
+      case 'command_executed':
+        if (event.result.success) {
+          voiceStatus = `✅ ${event.result.message}`;
+          // Refresh calendar to show new event
+          calendarStore.loadEvents();
+        } else {
+          voiceStatus = `❌ ${event.result.message}`;
+        }
+        // Clear status after 5 seconds
+        setTimeout(() => {
+          voiceStatus = 'Say "Hey Sausage" to give a command';
+          voiceTranscript = '';
+        }, 5000);
+        break;
+      case 'error':
+        voiceStatus = `❌ Error: ${event.error}`;
+        setTimeout(() => {
+          voiceStatus = 'Say "Hey Sausage" to give a command';
+        }, 3000);
+        break;
+    }
+  }
+
+  async function toggleVoice() {
+    try {
+      if (voiceActive) {
+        await window.electron.voice.stop();
+        voiceActive = false;
+        voiceStatus = 'Voice commands off';
+      } else {
+        await window.electron.voice.start();
+        voiceActive = true;
+        voiceStatus = 'Say "Hey Sausage" to give a command';
+      }
+    } catch (error) {
+      console.error('Failed to toggle voice:', error);
+    }
+  }
 </script>
 
 {#if loading}
@@ -201,6 +287,15 @@
           </button>
         </div>
 
+        <button
+          class="voice-toggle"
+          class:active={voiceActive}
+          onclick={toggleVoice}
+          title={voiceStatus || 'Toggle voice commands'}
+        >
+          {voiceActive ? '🎤' : '🔇'}
+        </button>
+
         <button class="btn-primary" onclick={() => { initialEventDate = new Date(); selectedEvent = null; showEventModal = true; }}>
           + New Event
         </button>
@@ -249,7 +344,14 @@
     </main>
 
     <footer class="footer">
-      <p>Home Dashboard v{version} • Offline-first family calendar</p>
+      <div class="footer-left">
+        <p>Home Dashboard v{version} • Offline-first family calendar</p>
+      </div>
+      {#if voiceStatus}
+        <div class="voice-status" class:listening={voiceStatus.includes('Listening')}>
+          {voiceStatus}
+        </div>
+      {/if}
     </footer>
   </div>
 
@@ -416,6 +518,40 @@
     border-color: #2563eb;
   }
 
+  .voice-toggle {
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: white;
+    border: 2px solid #e0e0e0;
+    border-radius: 50%;
+    font-size: 1.25rem;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .voice-toggle:hover {
+    background: #f5f5f5;
+    border-color: #d0d0d0;
+  }
+
+  .voice-toggle.active {
+    background: #10b981;
+    border-color: #10b981;
+    animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.7;
+    }
+  }
+
   .btn-primary {
     padding: 0.5rem 1rem;
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -481,15 +617,36 @@
   }
 
   .footer {
-    padding: 1rem 2rem;
+    padding: 0.75rem 2rem;
     background: white;
     border-top: 1px solid #e0e0e0;
-    text-align: center;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
   }
 
-  .footer p {
+  .footer-left p {
     margin: 0;
     font-size: 0.875rem;
     color: #999;
+  }
+
+  .voice-status {
+    padding: 0.5rem 1rem;
+    background: #f3f4f6;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    color: #666;
+    font-weight: 500;
+    max-width: 400px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .voice-status.listening {
+    background: #10b981;
+    color: white;
+    animation: pulse 1s ease-in-out infinite;
   }
 </style>

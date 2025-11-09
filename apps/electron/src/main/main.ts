@@ -4,10 +4,13 @@ import { fileURLToPath } from 'url';
 import { promises as fs } from 'fs';
 import os from 'os';
 import { randomBytes } from 'crypto';
+import { VoiceService } from './voice';
+import type { VoiceEvent } from './voice';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 let mainWindow: BrowserWindow | null = null;
+let voiceService: VoiceService | null = null;
 
 //Token storage path
 const getTokenPath = () => {
@@ -136,6 +139,14 @@ app.on('window-all-closed', () => {
   }
 });
 
+app.on('before-quit', async () => {
+  // Cleanup voice service
+  if (voiceService) {
+    await voiceService.cleanup();
+    voiceService = null;
+  }
+});
+
 // IPC handlers for main process communication
 ipcMain.handle('app:getVersion', () => {
   return app.getVersion();
@@ -164,4 +175,75 @@ ipcMain.handle('device:getToken', async () => {
 
 ipcMain.handle('device:clearToken', async () => {
   await clearDeviceToken();
+});
+
+// Voice command handlers
+ipcMain.handle('voice:initialize', async (_, userId: string, familyId: string) => {
+  try {
+    if (!voiceService) {
+      voiceService = new VoiceService({
+        wakeWord: 'hey sausage',
+        whisperModel: 'base',
+        language: 'en',
+      });
+
+      // Forward voice events to renderer
+      voiceService.on((event: VoiceEvent) => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('voice:event', event);
+        }
+      });
+    }
+
+    await voiceService.initialize(userId, familyId);
+    return { success: true };
+  } catch (error: any) {
+    console.error('Failed to initialize voice service:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('voice:start', async () => {
+  try {
+    if (!voiceService) {
+      throw new Error('Voice service not initialized');
+    }
+    await voiceService.start();
+    return { success: true };
+  } catch (error: any) {
+    console.error('Failed to start voice service:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('voice:stop', async () => {
+  try {
+    if (voiceService) {
+      voiceService.stop();
+    }
+    return { success: true };
+  } catch (error: any) {
+    console.error('Failed to stop voice service:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('voice:isActive', async () => {
+  return voiceService?.isActive() || false;
+});
+
+ipcMain.handle('voice:getConfig', async () => {
+  return voiceService?.getConfig() || null;
+});
+
+ipcMain.handle('voice:updateConfig', async (_, config: any) => {
+  try {
+    if (!voiceService) {
+      throw new Error('Voice service not initialized');
+    }
+    voiceService.updateConfig(config);
+    return { success: true };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
 });

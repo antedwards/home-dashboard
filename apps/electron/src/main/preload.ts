@@ -12,6 +12,23 @@ contextBridge.exposeInMainWorld('electron', {
   storeDeviceToken: (token: string) => ipcRenderer.invoke('device:storeToken', token),
   getDeviceToken: () => ipcRenderer.invoke('device:getToken'),
   clearDeviceToken: () => ipcRenderer.invoke('device:clearToken'),
+
+  // Voice commands
+  voice: {
+    initialize: (userId: string, familyId: string) =>
+      ipcRenderer.invoke('voice:initialize', userId, familyId),
+    start: () => ipcRenderer.invoke('voice:start'),
+    stop: () => ipcRenderer.invoke('voice:stop'),
+    isActive: () => ipcRenderer.invoke('voice:isActive'),
+    getConfig: () => ipcRenderer.invoke('voice:getConfig'),
+    updateConfig: (config: any) => ipcRenderer.invoke('voice:updateConfig', config),
+    onEvent: (callback: (event: any) => void) => {
+      ipcRenderer.on('voice:event', (_, event) => callback(event));
+    },
+    offEvent: (callback: (event: any) => void) => {
+      ipcRenderer.removeListener('voice:event', callback as any);
+    },
+  },
 });
 
 // Type definitions for the exposed API
@@ -23,6 +40,16 @@ export interface ElectronAPI {
   storeDeviceToken: (token: string) => Promise<void>;
   getDeviceToken: () => Promise<string | null>;
   clearDeviceToken: () => Promise<void>;
+  voice: {
+    initialize: (userId: string, familyId: string) => Promise<{ success: boolean; error?: string }>;
+    start: () => Promise<{ success: boolean; error?: string }>;
+    stop: () => Promise<{ success: boolean; error?: string }>;
+    isActive: () => Promise<boolean>;
+    getConfig: () => Promise<any>;
+    updateConfig: (config: any) => Promise<{ success: boolean; error?: string }>;
+    onEvent: (callback: (event: any) => void) => void;
+    offEvent: (callback: (event: any) => void) => void;
+  };
 }
 
 declare global {
