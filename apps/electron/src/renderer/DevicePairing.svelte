@@ -4,6 +4,11 @@
   let error = $state('');
   let success = $state(false);
 
+  async function openWebApp() {
+    const webAppUrl = import.meta.env.VITE_WEB_APP_URL || 'http://localhost:5173';
+    await window.electron.openExternal(`${webAppUrl}/devices/pair`);
+  }
+
   async function handlePair() {
     if (!code || code.trim().length === 0) {
       error = 'Please enter a pairing code';
@@ -60,11 +65,15 @@
     <div class="instructions">
       <h3>How to Pair:</h3>
       <ol>
-        <li>Open the Home Dashboard web app</li>
-        <li>Go to Devices → Generate Pairing Code</li>
+        <li>Click the button below to open the web app</li>
+        <li>Log in and generate a pairing code</li>
         <li>Enter the 2-word code below</li>
       </ol>
     </div>
+
+    <button class="btn-secondary" onclick={openWebApp}>
+      🌐 Open Web App for Pairing
+    </button>
 
     {#if success}
       <div class="success-message">
@@ -250,5 +259,25 @@
   .btn-primary:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+  }
+
+  .btn-secondary {
+    width: 100%;
+    padding: 1rem;
+    margin-bottom: 1.5rem;
+    background: white;
+    color: #667eea;
+    border: 2px solid #667eea;
+    border-radius: 10px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .btn-secondary:hover {
+    background: #f7f8ff;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
   }
 </style>

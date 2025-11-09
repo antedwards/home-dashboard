@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, safeStorage } from 'electron';
+import { app, BrowserWindow, ipcMain, safeStorage, shell } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { promises as fs } from 'fs';
@@ -161,6 +161,10 @@ ipcMain.handle('app:getVersion', () => {
 
 ipcMain.handle('app:getPath', (_, name: string) => {
   return app.getPath(name as any);
+});
+
+ipcMain.handle('app:openExternal', async (_, url: string) => {
+  await shell.openExternal(url);
 });
 
 // Device authentication handlers

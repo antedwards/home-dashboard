@@ -5,6 +5,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 contextBridge.exposeInMainWorld('electron', {
   getVersion: () => ipcRenderer.invoke('app:getVersion'),
   getPath: (name: string) => ipcRenderer.invoke('app:getPath', name),
+  openExternal: (url: string) => ipcRenderer.invoke('app:openExternal', url),
 
   // Device authentication
   getDeviceId: () => ipcRenderer.invoke('device:getDeviceId'),
@@ -43,6 +44,7 @@ contextBridge.exposeInMainWorld('electron', {
 export interface ElectronAPI {
   getVersion: () => Promise<string>;
   getPath: (name: string) => Promise<string>;
+  openExternal: (url: string) => Promise<void>;
   getDeviceId: () => Promise<string>;
   getDeviceName: () => Promise<string>;
   storeDeviceToken: (token: string) => Promise<void>;
