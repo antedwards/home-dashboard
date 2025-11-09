@@ -9,35 +9,51 @@
     type CalendarEvent,
   } from '@home-dashboard/ui';
   import { calendarStore } from '$lib/stores/calendar.svelte';
-  import { createSupabaseClient } from '@home-dashboard/database';
-
-  const supabase = createSupabaseClient(
-    import.meta.env.VITE_SUPABASE_URL,
-    import.meta.env.VITE_SUPABASE_ANON_KEY
-  );
+  import { supabase } from '$lib/supabase';
 
   let showEventModal = $state(false);
   let selectedEvent = $state<CalendarEvent | null>(null);
   let initialEventDate = $state<Date | undefined>(undefined);
+  let initError = $state<string | null>(null);
 
   onMount(async () => {
-    // Get current user and their family
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    try {
+      // Get current user and their family
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
 
-    if (user) {
-      // Get user's family
-      const { data: familyMember } = await supabase
-        .from('family_members')
-        .select('family_id')
-        .eq('user_id', user.id)
-        .single();
-
-      if (familyMember) {
-        // Initialize calendar store
-        await calendarStore.initialize(user.id, familyMember.family_id);
+      if (authError) {
+        console.error('Auth error:', authError);
+        initError = 'Authentication error. Please log in.';
+        return;
       }
+
+      if (user) {
+        // Get user's family
+        const { data: familyMember, error: familyError } = await supabase
+          .from('family_members')
+          .select('family_id')
+          .eq('user_id', user.id)
+          .single();
+
+        if (familyError) {
+          console.error('Family lookup error:', familyError);
+          initError = 'Could not find your family. Please contact support.';
+          return;
+        }
+
+        if (familyMember) {
+          // Initialize calendar store
+          await calendarStore.initialize(user.id, familyMember.family_id);
+        }
+      } else {
+        initError = 'Not authenticated. Please log in.';
+      }
+    } catch (error) {
+      console.error('Initialization error:', error);
+      initError = 'Failed to initialize calendar. Please refresh the page.';
     }
   });
 
@@ -162,7 +178,12 @@
 
   <!-- Calendar views -->
   <div class="calendar-container">
-    {#if calendarStore.loading && calendarStore.events.length === 0}
+    {#if initError}
+      <div class="error-state">
+        <p>{initError}</p>
+        <a href="/auth/login" class="btn-primary">Go to Login</a>
+      </div>
+    {:else if calendarStore.loading && calendarStore.events.length === 0}
       <div class="loading-state">
         <div class="spinner"></div>
         <p>Loading calendar...</p>

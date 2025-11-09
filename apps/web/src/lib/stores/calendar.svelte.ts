@@ -1,5 +1,6 @@
-import { createSupabaseClient, getEvents, createEvent, updateEvent, deleteEvent, type Event } from '@home-dashboard/database';
+import { getEvents, createEvent, updateEvent, deleteEvent, type Event } from '@home-dashboard/database';
 import type { CalendarEvent } from '@home-dashboard/ui';
+import { supabase } from '../supabase';
 
 // Calendar state
 export class CalendarStore {
@@ -10,11 +11,6 @@ export class CalendarStore {
   error = $state<string | null>(null);
   familyId = $state<string | null>(null);
   userId = $state<string | null>(null);
-
-  private supabase = createSupabaseClient(
-    import.meta.env.VITE_SUPABASE_URL,
-    import.meta.env.VITE_SUPABASE_ANON_KEY
-  );
 
   // Initialize the store with user and family data
   async initialize(userId: string, familyId: string) {
@@ -38,7 +34,7 @@ export class CalendarStore {
       const startDate = new Date(year, month, 1);
       const endDate = new Date(year, month + 1, 0, 23, 59, 59);
 
-      const dbEvents = await getEvents(this.supabase, this.familyId, startDate, endDate);
+      const dbEvents = await getEvents(supabase, this.familyId, startDate, endDate);
 
       // Convert database events to CalendarEvent format
       this.events = dbEvents.map(this.convertToCalendarEvent);
@@ -54,7 +50,7 @@ export class CalendarStore {
   private subscribeToChanges() {
     if (!this.familyId) return;
 
-    this.supabase
+    supabase
       .channel('calendar-changes')
       .on(
         'postgres_changes',
@@ -80,7 +76,7 @@ export class CalendarStore {
     this.error = null;
 
     try {
-      const newEvent = await createEvent(this.supabase, {
+      const newEvent = await createEvent(supabase, {
         family_id: this.familyId,
         user_id: this.userId,
         title: eventData.title!,
@@ -112,7 +108,7 @@ export class CalendarStore {
     this.error = null;
 
     try {
-      const updated = await updateEvent(this.supabase, eventData.id, {
+      const updated = await updateEvent(supabase, eventData.id, {
         title: eventData.title,
         description: eventData.description,
         start_time: eventData.start,
@@ -143,7 +139,7 @@ export class CalendarStore {
     this.error = null;
 
     try {
-      await deleteEvent(this.supabase, eventId);
+      await deleteEvent(supabase, eventId);
 
       // Remove from local state
       this.events = this.events.filter((e) => e.id !== eventId);
