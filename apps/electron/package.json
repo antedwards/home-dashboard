@@ -65,23 +65,10 @@
       "url": "${env.UPDATE_SERVER_URL}",
       "channel": "latest"
     },
-    "mac": {
-      "category": "public.app-category.productivity",
-      "target": [
-        "dmg"
-      ],
-      "extendInfo": {
-        "NSMicrophoneUsageDescription": "Home Dashboard needs access to your microphone to enable voice commands with the 'Hey Sausage' wake word."
-      }
-    },
-    "win": {
-      "target": [
-        "nsis"
-      ]
-    },
     "linux": {
       "target": [
-        "AppImage"
+        "AppImage",
+        "deb"
       ],
       "category": "Utility"
     }

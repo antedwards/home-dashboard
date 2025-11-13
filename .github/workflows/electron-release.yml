@@ -14,15 +14,7 @@ jobs:
     strategy:
       matrix:
         include:
-          # macOS builds
-          - os: macos-latest
-            arch: x64
-            platform: darwin
-          - os: macos-latest
-            arch: arm64
-            platform: darwin
-
-          # Linux builds (including Raspberry Pi)
+          # Linux builds for Raspberry Pi and development
           - os: ubuntu-latest
             arch: x64
             platform: linux
@@ -32,11 +24,6 @@ jobs:
           - os: ubuntu-latest
             arch: armv7l
             platform: linux
-
-          # Windows builds
-          - os: windows-latest
-            arch: x64
-            platform: win32
 
     steps:
       - name: Checkout code
@@ -66,7 +53,7 @@ jobs:
       - name: Generate checksums
         run: |
           cd apps/electron/release
-          for file in *.{dmg,AppImage,exe,deb,zip}; do
+          for file in *.{AppImage,deb}; do
             if [ -f "$file" ]; then
               shasum -a 256 "$file" | cut -d ' ' -f 1 > "$file.sha256"
             fi
@@ -78,11 +65,8 @@ jobs:
         with:
           name: electron-${{ matrix.platform }}-${{ matrix.arch }}
           path: |
-            apps/electron/release/*.dmg
             apps/electron/release/*.AppImage
-            apps/electron/release/*.exe
             apps/electron/release/*.deb
-            apps/electron/release/*.zip
             apps/electron/release/*.sha256
             apps/electron/release/*.yml
             apps/electron/release/*.yaml
@@ -149,11 +133,8 @@ jobs:
           function getContentType(fileName) {
             const ext = path.extname(fileName).toLowerCase();
             const types = {
-              '.dmg': 'application/x-apple-diskimage',
-              '.exe': 'application/x-msdownload',
               '.AppImage': 'application/x-executable',
               '.deb': 'application/vnd.debian.binary-package',
-              '.zip': 'application/zip',
               '.sha256': 'text/plain',
               '.yml': 'text/yaml',
               '.yaml': 'text/yaml',
@@ -173,11 +154,8 @@ jobs:
                 if (entry.isDirectory()) {
                   findFiles(fullPath);
                 } else if (
-                  entry.name.endsWith('.dmg') ||
-                  entry.name.endsWith('.exe') ||
                   entry.name.endsWith('.AppImage') ||
                   entry.name.endsWith('.deb') ||
-                  entry.name.endsWith('.zip') ||
                   entry.name.endsWith('.sha256')
                 ) {
                   files.push(fullPath);
