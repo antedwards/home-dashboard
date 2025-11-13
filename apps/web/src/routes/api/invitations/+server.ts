@@ -9,6 +9,7 @@ import { invitations } from '@home-dashboard/database/db/schema';
 import { eq } from 'drizzle-orm';
 import { requireAuth } from '$lib/server/auth';
 import { createClient } from '@supabase/supabase-js';
+import { SUPABASE_SERVICE_ROLE_KEY } from '$env/static/private';
 import { PUBLIC_APP_URL, PUBLIC_SUPABASE_URL } from '$env/static/public';
 
 // Generate a secure random token
@@ -133,6 +134,17 @@ export const POST: RequestHandler = async (event) => {
       console.log(`Invitation sent to ${email} via Supabase`);
     } catch (emailError) {
       console.error('Failed to send invitation:', emailError);
+
+      // Rollback: Delete the invitation record since email sending failed
+      try {
+        await db
+          .delete(invitations)
+          .where(eq(invitations.id, invitation.id));
+        console.log(`Rolled back invitation record for ${email}`);
+      } catch (deleteError) {
+        console.error('Failed to rollback invitation:', deleteError);
+      }
+
       return json({ error: 'Failed to send invitation email' }, { status: 500 });
     }
 
