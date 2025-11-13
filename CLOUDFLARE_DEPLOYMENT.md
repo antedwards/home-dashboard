@@ -18,6 +18,7 @@ This guide walks you through deploying your Home Dashboard web app to Cloudflare
 | `PUBLIC_SUPABASE_URL` | Yes | Cloudflare Pages | Supabase → Settings → API → Project URL |
 | `PUBLIC_SUPABASE_ANON_KEY` | Yes | Cloudflare Pages | Supabase → Settings → API → anon/public key |
 | `SUPABASE_SERVICE_ROLE_KEY` | Yes | Cloudflare Pages | Supabase → Settings → API → service_role key |
+| `PUBLIC_APP_URL` | Yes | Cloudflare Pages | Your deployed URL (e.g., `https://app.yourdomain.com`) |
 | **Hyperdrive Binding** | Yes | Cloudflare Pages → Functions | Created in Step 2 |
 
 **Important:** Database access uses Hyperdrive bindings, NOT a `DATABASE_URL` environment variable.
@@ -116,12 +117,14 @@ Click **Environment variables (advanced)** and add:
 | `PUBLIC_SUPABASE_URL` | `https://your-project.supabase.co` | Your Supabase URL |
 | `PUBLIC_SUPABASE_ANON_KEY` | `your-anon-key` | Your Supabase anon key |
 | `SUPABASE_SERVICE_ROLE_KEY` | `your-service-role-key` | For server-side operations (keep secret!) |
+| `PUBLIC_APP_URL` | `https://home-dashboard.pages.dev` | Your deployed app URL (use .pages.dev initially, update after custom domain) |
 
 **Where to find these values:**
 - Supabase Dashboard → Settings → API
 - `PUBLIC_SUPABASE_URL`: Project URL
 - `PUBLIC_SUPABASE_ANON_KEY`: anon/public key
 - `SUPABASE_SERVICE_ROLE_KEY`: service_role key (keep this secret!)
+- `PUBLIC_APP_URL`: Your Cloudflare Pages URL (initially `*.pages.dev`, later your custom domain)
 
 **Note:** `DATABASE_URL` is NOT needed - database access is handled by Hyperdrive bindings.
 
