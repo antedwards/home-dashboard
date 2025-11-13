@@ -1,33 +1,25 @@
 /**
  * Database client using Drizzle ORM
  * Uses direct Postgres connection (not Supabase client)
+ *
+ * For Cloudflare Workers/Pages with Hyperdrive:
+ * - Creates a NEW client for each request (no singleton)
+ * - Hyperdrive handles connection pooling at the edge
+ * - Connection must be created and used within a single request
  */
 
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 
-// Singleton connection
-let client: ReturnType<typeof drizzle> | null = null;
-
 export function createDbClient(connectionString: string) {
-  if (client) return client;
-
   // Create postgres.js connection
+  // Note: In Cloudflare Workers with Hyperdrive, this connects to the edge pool
   const connection = postgres(connectionString, {
-    max: 10,
+    max: 1, // Use 1 connection per request (Hyperdrive pools at edge)
     idle_timeout: 20,
     connect_timeout: 10,
   });
 
   // Create Drizzle client
-  client = drizzle(connection);
-
-  return client;
-}
-
-export function getDbClient() {
-  if (!client) {
-    throw new Error('Database client not initialized. Call createDbClient() first.');
-  }
-  return client;
+  return drizzle(connection);
 }
