@@ -8,22 +8,8 @@ on:
 
 jobs:
   build:
-    name: Build Electron App
-    runs-on: ${{ matrix.os }}
-
-    strategy:
-      matrix:
-        include:
-          # Linux builds for Raspberry Pi and development
-          - os: ubuntu-latest
-            arch: x64
-            platform: linux
-          - os: ubuntu-latest
-            arch: arm64
-            platform: linux
-          - os: ubuntu-latest
-            arch: armv7l
-            platform: linux
+    name: Build Electron App for Raspberry Pi 4B
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
@@ -48,7 +34,7 @@ jobs:
           UPDATE_SERVER_URL: ${{ secrets.UPDATE_SERVER_URL }}
         run: |
           cd apps/electron
-          pnpm build --${{ matrix.platform }} --${{ matrix.arch }}
+          pnpm build --linux --arm64
 
       - name: Generate checksums
         run: |
@@ -63,7 +49,7 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: electron-${{ matrix.platform }}-${{ matrix.arch }}
+          name: electron-rpi4-arm64
           path: |
             apps/electron/release/*.AppImage
             apps/electron/release/*.deb
