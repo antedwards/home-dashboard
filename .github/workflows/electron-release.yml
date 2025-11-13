@@ -1,0 +1,208 @@
+name: Build and Release Electron App
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'  # Triggers on version tags like v1.0.0
+  workflow_dispatch:  # Allows manual trigger
+
+jobs:
+  build:
+    name: Build Electron App
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        include:
+          # macOS builds
+          - os: macos-latest
+            arch: x64
+            platform: darwin
+          - os: macos-latest
+            arch: arm64
+            platform: darwin
+
+          # Linux builds (including Raspberry Pi)
+          - os: ubuntu-latest
+            arch: x64
+            platform: linux
+          - os: ubuntu-latest
+            arch: arm64
+            platform: linux
+          - os: ubuntu-latest
+            arch: armv7l
+            platform: linux
+
+          # Windows builds
+          - os: windows-latest
+            arch: x64
+            platform: win32
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 8
+
+      - name: Install dependencies
+        run: pnpm install --ignore-scripts
+
+      - name: Build Electron app
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          UPDATE_SERVER_URL: ${{ secrets.UPDATE_SERVER_URL }}
+        run: |
+          cd apps/electron
+          pnpm build --${{ matrix.platform }} --${{ matrix.arch }}
+
+      - name: Generate checksums
+        run: |
+          cd apps/electron/release
+          for file in *.{dmg,AppImage,exe,deb,zip}; do
+            if [ -f "$file" ]; then
+              shasum -a 256 "$file" | cut -d ' ' -f 1 > "$file.sha256"
+            fi
+          done
+        shell: bash
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: electron-${{ matrix.platform }}-${{ matrix.arch }}
+          path: |
+            apps/electron/release/*.dmg
+            apps/electron/release/*.AppImage
+            apps/electron/release/*.exe
+            apps/electron/release/*.deb
+            apps/electron/release/*.zip
+            apps/electron/release/*.sha256
+            apps/electron/release/*.yml
+            apps/electron/release/*.yaml
+
+  upload-to-supabase:
+    name: Upload to Supabase Storage
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+
+      - name: Install Supabase CLI
+        run: npm install -g @supabase/supabase-js
+
+      - name: Upload files to Supabase Storage
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          cat > upload.js << 'EOF'
+          const { createClient } = require('@supabase/supabase-js');
+          const fs = require('fs');
+          const path = require('path');
+
+          const supabase = createClient(
+            process.env.SUPABASE_URL,
+            process.env.SUPABASE_SERVICE_ROLE_KEY
+          );
+
+          async function uploadFile(filePath, fileName) {
+            const fileBuffer = fs.readFileSync(filePath);
+
+            console.log(`Uploading ${fileName}...`);
+
+            const { data, error } = await supabase.storage
+              .from('app-updates')
+              .upload(fileName, fileBuffer, {
+                cacheControl: '3600',
+                upsert: true,
+                contentType: getContentType(fileName),
+              });
+
+            if (error) {
+              console.error(`Failed to upload ${fileName}:`, error);
+              throw error;
+            }
+
+            console.log(`Successfully uploaded ${fileName}`);
+          }
+
+          function getContentType(fileName) {
+            const ext = path.extname(fileName).toLowerCase();
+            const types = {
+              '.dmg': 'application/x-apple-diskimage',
+              '.exe': 'application/x-msdownload',
+              '.AppImage': 'application/x-executable',
+              '.deb': 'application/vnd.debian.binary-package',
+              '.zip': 'application/zip',
+              '.sha256': 'text/plain',
+              '.yml': 'text/yaml',
+              '.yaml': 'text/yaml',
+            };
+            return types[ext] || 'application/octet-stream';
+          }
+
+          async function main() {
+            const artifactsDir = './artifacts';
+            const files = [];
+
+            // Recursively find all files
+            function findFiles(dir) {
+              const entries = fs.readdirSync(dir, { withFileTypes: true });
+              for (const entry of entries) {
+                const fullPath = path.join(dir, entry.name);
+                if (entry.isDirectory()) {
+                  findFiles(fullPath);
+                } else if (
+                  entry.name.endsWith('.dmg') ||
+                  entry.name.endsWith('.exe') ||
+                  entry.name.endsWith('.AppImage') ||
+                  entry.name.endsWith('.deb') ||
+                  entry.name.endsWith('.zip') ||
+                  entry.name.endsWith('.sha256')
+                ) {
+                  files.push(fullPath);
+                }
+              }
+            }
+
+            findFiles(artifactsDir);
+
+            for (const file of files) {
+              await uploadFile(file, path.basename(file));
+            }
+
+            console.log('All files uploaded successfully!');
+          }
+
+          main().catch(err => {
+            console.error('Upload failed:', err);
+            process.exit(1);
+          });
+          EOF
+
+          node upload.js
+
+      - name: Create Release Notes
+        run: |
+          echo "Release ${{ github.ref_name }} uploaded to Supabase Storage"
+          echo "Files uploaded: $(find ./artifacts -type f | wc -l)"

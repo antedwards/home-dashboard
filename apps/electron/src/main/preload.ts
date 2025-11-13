@@ -49,6 +49,19 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.removeListener('voice:event', callback as any);
     },
   },
+
+  // Auto-update
+  update: {
+    check: () => ipcRenderer.invoke('update:check'),
+    download: (updateInfo: any) => ipcRenderer.invoke('update:download', updateInfo),
+    installAndRestart: () => ipcRenderer.invoke('update:installAndRestart'),
+    onEvent: (callback: (event: any) => void) => {
+      ipcRenderer.on('update:event', (_, event) => callback(event));
+    },
+    offEvent: (callback: (event: any) => void) => {
+      ipcRenderer.removeListener('update:event', callback as any);
+    },
+  },
 });
 
 // Type definitions for the exposed API
@@ -87,6 +100,13 @@ export interface ElectronAPI {
     updateConfig: (config: any) => Promise<{ success: boolean; error?: string }>;
     processAudio: (audioBuffer: ArrayBuffer) => Promise<{ success: boolean; error?: string }>;
     checkWakeWord: (audioBuffer: ArrayBuffer) => Promise<{ success: boolean; detected: boolean; error?: string }>;
+    onEvent: (callback: (event: any) => void) => void;
+    offEvent: (callback: (event: any) => void) => void;
+  };
+  update: {
+    check: () => Promise<{ success: boolean; data?: any; error?: string }>;
+    download: (updateInfo: any) => Promise<{ success: boolean; error?: string }>;
+    installAndRestart: () => Promise<{ success: boolean; error?: string }>;
     onEvent: (callback: (event: any) => void) => void;
     offEvent: (callback: (event: any) => void) => void;
   };

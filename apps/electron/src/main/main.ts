@@ -1,4 +1,5 @@
 import { app, BrowserWindow, ipcMain, safeStorage, shell } from 'electron';
+import { autoUpdater } from 'electron-updater';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { promises as fsPromises } from 'fs';
@@ -21,6 +22,57 @@ const supabase = createSupabaseClient(
   process.env.VITE_SUPABASE_URL!,
   process.env.VITE_SUPABASE_ANON_KEY!
 );
+
+// Configure auto-updater
+const UPDATE_SERVER_URL = process.env.VITE_UPDATE_SERVER_URL || 'https://yourdomain.com/api/updates';
+autoUpdater.setFeedURL({
+  provider: 'generic',
+  url: UPDATE_SERVER_URL,
+});
+
+// Auto-updater will need custom request headers for authentication
+autoUpdater.autoDownload = false; // We'll download manually with auth headers
+autoUpdater.autoInstallOnAppQuit = true;
+
+// Log auto-updater events
+autoUpdater.logger = console;
+
+// Auto-updater event handlers
+autoUpdater.on('checking-for-update', () => {
+  console.log('[AutoUpdater] Checking for updates...');
+  sendUpdateEvent('checking-for-update');
+});
+
+autoUpdater.on('update-available', (info) => {
+  console.log('[AutoUpdater] Update available:', info);
+  sendUpdateEvent('update-available', info);
+});
+
+autoUpdater.on('update-not-available', (info) => {
+  console.log('[AutoUpdater] No updates available:', info);
+  sendUpdateEvent('update-not-available', info);
+});
+
+autoUpdater.on('error', (err) => {
+  console.error('[AutoUpdater] Error:', err);
+  sendUpdateEvent('error', { message: err.message });
+});
+
+autoUpdater.on('download-progress', (progressObj) => {
+  console.log(`[AutoUpdater] Download progress: ${progressObj.percent}%`);
+  sendUpdateEvent('download-progress', progressObj);
+});
+
+autoUpdater.on('update-downloaded', (info) => {
+  console.log('[AutoUpdater] Update downloaded:', info);
+  sendUpdateEvent('update-downloaded', info);
+});
+
+function sendUpdateEvent(event: string, data?: any) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('update:event', { event, data });
+  }
+}
 
 // Token storage path
 const getTokenPath = () => {
@@ -187,6 +239,15 @@ if (!gotTheLock) {
   app.whenReady().then(() => {
     createWindow();
 
+    // Check for updates on startup (after a delay to let app load)
+    if (!process.env.VITE_DEV_SERVER_URL) {
+      setTimeout(() => {
+        checkForUpdatesWithAuth().catch(err => {
+          console.error('[AutoUpdater] Failed to check for updates on startup:', err);
+        });
+      }, 5000);
+    }
+
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) {
         createWindow();
@@ -215,6 +276,122 @@ app.on('before-quit', async () => {
   }
 });
 
+/**
+ * Check for updates with authentication
+ */
+async function checkForUpdatesWithAuth(): Promise<any> {
+  try {
+    const tokens = await getDeviceTokens();
+    if (!tokens) {
+      console.log('[AutoUpdater] No device tokens, skipping update check');
+      return null;
+    }
+
+    const platform = process.platform;
+    const arch = process.arch;
+    const currentVersion = app.getVersion();
+
+    console.log(`[AutoUpdater] Checking for updates (platform: ${platform}, arch: ${arch}, version: ${currentVersion})`);
+
+    // Call our custom API with authentication
+    const response = await fetch(`${UPDATE_SERVER_URL}/latest?platform=${platform}&arch=${arch}&version=${currentVersion}`, {
+      headers: {
+        'Authorization': `Bearer ${tokens.access_token}`,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Update check failed: ${response.statusText}`);
+    }
+
+    const updateInfo = await response.json();
+
+    if (updateInfo.updateAvailable) {
+      console.log('[AutoUpdater] Update available:', updateInfo.version);
+      sendUpdateEvent('update-available', updateInfo);
+      return updateInfo;
+    } else {
+      console.log('[AutoUpdater] No updates available');
+      sendUpdateEvent('update-not-available');
+      return null;
+    }
+  } catch (error: any) {
+    console.error('[AutoUpdater] Failed to check for updates:', error);
+    sendUpdateEvent('error', { message: error.message });
+    throw error;
+  }
+}
+
+/**
+ * Download and install update with authentication
+ */
+async function downloadAndInstallUpdate(updateInfo: any): Promise<void> {
+  try {
+    const tokens = await getDeviceTokens();
+    if (!tokens) {
+      throw new Error('No device tokens available');
+    }
+
+    console.log('[AutoUpdater] Downloading update from:', updateInfo.files[0].url);
+
+    // Download the update file
+    const response = await fetch(updateInfo.files[0].url, {
+      headers: {
+        'Authorization': `Bearer ${tokens.access_token}`,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Download failed: ${response.statusText}`);
+    }
+
+    // Get the file buffer
+    const buffer = await response.arrayBuffer();
+    const fileBuffer = Buffer.from(buffer);
+
+    // Save to temp directory
+    const ext = updateInfo.files[0].url.includes('.dmg') ? '.dmg' :
+                 updateInfo.files[0].url.includes('.exe') ? '.exe' :
+                 updateInfo.files[0].url.includes('.AppImage') ? '.AppImage' : '';
+
+    const tempFile = path.join(os.tmpdir(), `home-dashboard-update${ext}`);
+    await fsPromises.writeFile(tempFile, fileBuffer);
+
+    console.log('[AutoUpdater] Update downloaded to:', tempFile);
+
+    // Verify checksum if available
+    if (updateInfo.files[0].checksum) {
+      const crypto = await import('crypto');
+      const hash = crypto.createHash('sha256');
+      hash.update(fileBuffer);
+      const calculatedChecksum = hash.digest('hex');
+
+      if (calculatedChecksum !== updateInfo.files[0].checksum) {
+        await fsPromises.unlink(tempFile);
+        throw new Error('Checksum verification failed');
+      }
+
+      console.log('[AutoUpdater] Checksum verified');
+    }
+
+    sendUpdateEvent('update-downloaded', { path: tempFile });
+
+    // On Linux, make AppImage executable and launch it
+    if (process.platform === 'linux' && ext === '.AppImage') {
+      await fsPromises.chmod(tempFile, '755');
+      console.log('[AutoUpdater] Made AppImage executable. User must manually run:', tempFile);
+      // TODO: Could open file manager or prompt user
+    }
+
+    // Note: For proper auto-update, we'd use electron-updater's built-in functionality
+    // This is a basic implementation that downloads the file
+  } catch (error: any) {
+    console.error('[AutoUpdater] Failed to download update:', error);
+    sendUpdateEvent('error', { message: error.message });
+    throw error;
+  }
+}
+
 // IPC handlers for main process communication
 ipcMain.handle('app:getVersion', () => {
   return app.getVersion();
@@ -226,6 +403,34 @@ ipcMain.handle('app:getPath', (_, name: string) => {
 
 ipcMain.handle('app:openExternal', async (_, url: string) => {
   await shell.openExternal(url);
+});
+
+// Update handlers
+ipcMain.handle('update:check', async () => {
+  try {
+    const updateInfo = await checkForUpdatesWithAuth();
+    return { success: true, data: updateInfo };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('update:download', async (_, updateInfo: any) => {
+  try {
+    await downloadAndInstallUpdate(updateInfo);
+    return { success: true };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('update:installAndRestart', async () => {
+  try {
+    autoUpdater.quitAndInstall(false, true);
+    return { success: true };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
 });
 
 // Device authentication handlers

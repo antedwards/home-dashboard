@@ -10,6 +10,7 @@
     type CalendarEvent,
   } from '@home-dashboard/ui';
   import DevicePairing from './DevicePairing.svelte';
+  import UpdateNotification from './UpdateNotification.svelte';
   import { calendarStore } from './stores/calendar.svelte';
 
   let version = $state('');
@@ -232,6 +233,7 @@
 {:else if !isAuthenticated}
   <DevicePairing />
 {:else}
+  <UpdateNotification />
   <div class="app">
     <header class="header">
       <div class="header-left">
