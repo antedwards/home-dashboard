@@ -13,7 +13,7 @@
     "type-check": "tsc --noEmit",
     "electron:dev": "vite",
     "electron:build": "vite build && electron-builder",
-    "postinstall": "bash scripts/compile-whisper.sh && npm run download:models",
+    "postinstall": "[ -n \"$CF_PAGES\" ] && echo 'Skipping electron build on Cloudflare Pages' || (bash scripts/compile-whisper.sh && npm run download:models)",
     "compile:whisper": "bash scripts/compile-whisper.sh",
     "download:models": "npx whisper-node download"
   },
