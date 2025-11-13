@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, safeStorage, shell } from 'electron';
 import { autoUpdater } from 'electron-updater';
+import { spawn } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { promises as fsPromises } from 'fs';
@@ -246,6 +247,14 @@ if (!gotTheLock) {
           console.error('[AutoUpdater] Failed to check for updates on startup:', err);
         });
       }, 5000);
+
+      // Check for updates every 6 hours
+      setInterval(() => {
+        console.log('[AutoUpdater] Periodic update check...');
+        checkForUpdatesWithAuth().catch(err => {
+          console.error('[AutoUpdater] Periodic update check failed:', err);
+        });
+      }, 6 * 60 * 60 * 1000); // 6 hours
     }
 
     app.on('activate', () => {
@@ -309,6 +318,11 @@ async function checkForUpdatesWithAuth(): Promise<any> {
     if (updateInfo.updateAvailable) {
       console.log('[AutoUpdater] Update available:', updateInfo.version);
       sendUpdateEvent('update-available', updateInfo);
+
+      // Automatically download and install the update
+      console.log('[AutoUpdater] Starting automatic download...');
+      await downloadAndInstallUpdate(updateInfo);
+
       return updateInfo;
     } else {
       console.log('[AutoUpdater] No updates available');
@@ -376,15 +390,30 @@ async function downloadAndInstallUpdate(updateInfo: any): Promise<void> {
 
     sendUpdateEvent('update-downloaded', { path: tempFile });
 
-    // On Linux, make AppImage executable and launch it
+    // Automatically install and restart
     if (process.platform === 'linux' && ext === '.AppImage') {
       await fsPromises.chmod(tempFile, '755');
-      console.log('[AutoUpdater] Made AppImage executable. User must manually run:', tempFile);
-      // TODO: Could open file manager or prompt user
-    }
+      console.log('[AutoUpdater] Update ready, restarting in 3 seconds...');
 
-    // Note: For proper auto-update, we'd use electron-updater's built-in functionality
-    // This is a basic implementation that downloads the file
+      // Show restart message to user
+      sendUpdateEvent('update-restarting', { delay: 3 });
+
+      // Wait 3 seconds to show the message
+      await new Promise(resolve => setTimeout(resolve, 3000));
+
+      // Launch new AppImage in detached mode
+      const child = spawn(tempFile, [], {
+        detached: true,
+        stdio: 'ignore',
+      });
+
+      child.unref();
+
+      console.log('[AutoUpdater] New version launched, quitting current instance');
+
+      // Quit current app
+      app.quit();
+    }
   } catch (error: any) {
     console.error('[AutoUpdater] Failed to download update:', error);
     sendUpdateEvent('error', { message: error.message });

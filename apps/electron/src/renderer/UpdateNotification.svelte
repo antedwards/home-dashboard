@@ -7,6 +7,8 @@
   let downloadProgress = $state(0);
   let error = $state('');
   let checking = $state(false);
+  let restarting = $state(false);
+  let restartCountdown = $state(3);
 
   function handleUpdateEvent(event: any) {
     console.log('[UpdateNotification] Update event:', event);
@@ -20,6 +22,7 @@
       case 'update-available':
         checking = false;
         updateAvailable = true;
+        downloading = true;
         updateInfo = event.data;
         break;
 
@@ -34,6 +37,18 @@
 
       case 'update-downloaded':
         downloading = false;
+        break;
+
+      case 'update-restarting':
+        restarting = true;
+        restartCountdown = event.data.delay || 3;
+        // Start countdown
+        const interval = setInterval(() => {
+          restartCountdown--;
+          if (restartCountdown <= 0) {
+            clearInterval(interval);
+          }
+        }, 1000);
         break;
 
       case 'error':
@@ -55,102 +70,44 @@
       window.electron.update.offEvent(handleUpdateEvent);
     }
   });
-
-  async function handleCheckForUpdates() {
-    checking = true;
-    error = '';
-
-    const result = await window.electron.update.check();
-
-    if (!result.success) {
-      error = result.error || 'Failed to check for updates';
-      checking = false;
-    }
-  }
-
-  async function handleDownloadUpdate() {
-    if (!updateInfo) return;
-
-    downloading = true;
-    error = '';
-
-    const result = await window.electron.update.download(updateInfo);
-
-    if (!result.success) {
-      error = result.error || 'Failed to download update';
-      downloading = false;
-    }
-  }
-
-  async function handleInstallUpdate() {
-    const result = await window.electron.update.installAndRestart();
-
-    if (!result.success) {
-      error = result.error || 'Failed to install update';
-    }
-  }
 </script>
 
-{#if checking}
-  <div class="update-banner info">
-    <div class="update-content">
-      <span class="update-icon">🔄</span>
-      <span>Checking for updates...</span>
-    </div>
-  </div>
-{/if}
-
-{#if error}
-  <div class="update-banner error">
-    <div class="update-content">
-      <span class="update-icon">⚠️</span>
-      <span>{error}</span>
-    </div>
-    <button class="btn-dismiss" onclick={() => (error = '')}>Dismiss</button>
-  </div>
-{/if}
-
-{#if updateAvailable && !downloading}
+{#if restarting}
   <div class="update-banner success">
     <div class="update-content">
-      <span class="update-icon">✨</span>
+      <span class="update-icon">🔄</span>
       <div class="update-text">
-        <strong>Update Available!</strong>
-        <span class="version">Version {updateInfo?.version || 'unknown'}</span>
+        <strong>Update complete!</strong>
+        <span class="version">Restarting in {restartCountdown}...</span>
       </div>
     </div>
-    <div class="update-actions">
-      <button class="btn-primary" onclick={handleDownloadUpdate}>
-        Download Update
-      </button>
-      <button class="btn-dismiss" onclick={() => (updateAvailable = false)}>
-        Later
-      </button>
-    </div>
   </div>
-{/if}
-
-{#if downloading}
+{:else if downloading}
   <div class="update-banner info">
     <div class="update-content">
       <span class="update-icon">⬇️</span>
       <div class="update-text">
         <strong>Downloading update...</strong>
-        <div class="progress-bar">
-          <div class="progress-fill" style="width: {downloadProgress}%"></div>
-        </div>
-        <span class="progress-text">{Math.round(downloadProgress)}%</span>
+        {#if downloadProgress > 0}
+          <div class="progress-bar">
+            <div class="progress-fill" style="width: {downloadProgress}%"></div>
+          </div>
+          <span class="progress-text">{Math.round(downloadProgress)}%</span>
+        {/if}
+      </div>
+    </div>
+  </div>
+{:else if updateAvailable}
+  <div class="update-banner info">
+    <div class="update-content">
+      <span class="update-icon">✨</span>
+      <div class="update-text">
+        <strong>Update found!</strong>
+        <span class="version">Version {updateInfo?.version || 'unknown'} - Starting download...</span>
       </div>
     </div>
   </div>
 {/if}
-
-<!-- Manual check button (can be placed anywhere in the app) -->
-<div class="update-check-container">
-  <button class="btn-check-updates" onclick={handleCheckForUpdates} disabled={checking}>
-    {checking ? 'Checking...' : 'Check for Updates'}
-  </button>
-</div>
 
 <style>
   .update-banner {
@@ -213,51 +170,13 @@
     opacity: 0.8;
   }
 
-  .update-actions {
-    display: flex;
-    gap: 0.5rem;
-  }
-
-  .btn-primary {
-    padding: 0.5rem 1rem;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-    border: none;
-    border-radius: 6px;
-    font-size: 0.875rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.2s;
-  }
-
-  .btn-primary:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-  }
-
-  .btn-dismiss {
-    padding: 0.5rem 1rem;
-    background: transparent;
-    color: inherit;
-    border: 1px solid currentColor;
-    border-radius: 6px;
-    font-size: 0.875rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s;
-    opacity: 0.7;
-  }
-
-  .btn-dismiss:hover {
-    opacity: 1;
-  }
-
   .progress-bar {
     width: 200px;
     height: 4px;
     background: rgba(0, 0, 0, 0.1);
     border-radius: 2px;
     overflow: hidden;
+    margin: 0.25rem 0;
   }
 
   .progress-fill {
@@ -269,36 +188,5 @@
   .progress-text {
     font-size: 0.75rem;
     opacity: 0.8;
-  }
-
-  .update-check-container {
-    position: fixed;
-    bottom: 1rem;
-    right: 1rem;
-    z-index: 999;
-  }
-
-  .btn-check-updates {
-    padding: 0.75rem 1rem;
-    background: white;
-    color: #667eea;
-    border: 2px solid #667eea;
-    border-radius: 8px;
-    font-size: 0.875rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.2s;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  }
-
-  .btn-check-updates:hover:not(:disabled) {
-    background: #f7f8ff;
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
-  }
-
-  .btn-check-updates:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
   }
 </style>
