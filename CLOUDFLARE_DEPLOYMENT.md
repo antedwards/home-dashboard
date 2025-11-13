@@ -27,6 +27,20 @@ This guide walks you through deploying your Home Dashboard web app to Cloudflare
 
 ✅ **Already done!** The Cloudflare adapter has been installed and configured.
 
+### 1.1 Update Hyperdrive ID in wrangler.toml
+
+Before deploying, you need to update the Hyperdrive ID in `apps/web/wrangler.toml`:
+
+1. After creating your Hyperdrive configuration (Step 2.2), you'll get a Hyperdrive ID
+2. Open `apps/web/wrangler.toml`
+3. Replace `REPLACE_WITH_YOUR_HYPERDRIVE_ID` with your actual Hyperdrive ID
+4. Commit the change: `git add apps/web/wrangler.toml && git commit -m "chore: Add Hyperdrive ID"`
+
+**Why do we need wrangler.toml?**
+- Enables `nodejs_compat` flag (required for postgres-js driver)
+- Configures Hyperdrive binding for database access
+- Sets compatibility date for Workers runtime
+
 ## Step 2: Set Up Cloudflare Hyperdrive (Database Connection)
 
 Cloudflare Pages cannot make direct TCP connections to Postgres databases. Hyperdrive is Cloudflare's connection pooler that enables Postgres access from Workers/Pages.
@@ -128,37 +142,26 @@ Click **Environment variables (advanced)** and add:
 
 **Note:** `DATABASE_URL` is NOT needed - database access is handled by Hyperdrive bindings.
 
-### 3.3 Bind Hyperdrive to Your Pages Project
+### 3.3 Verify Configuration
 
-After creating your Pages project, you need to bind the Hyperdrive configuration:
+At this point, you should have:
 
-#### Via Dashboard:
+✅ **Environment Variables Set** (in Cloudflare Pages → Settings):
+- `PNPM_VERSION` = `8`
+- `NODE_VERSION` = `20`
+- `PUBLIC_SUPABASE_URL` = Your Supabase URL
+- `PUBLIC_SUPABASE_ANON_KEY` = Your anon key
+- `SUPABASE_SERVICE_ROLE_KEY` = Your service role key
+- `PUBLIC_APP_URL` = Your .pages.dev URL
 
-1. Go to your Pages project
-2. Click **Settings** → **Functions**
-3. Scroll to **Hyperdrive bindings**
-4. Click **Add binding**
-5. Enter:
-   - **Variable name**: `HYPERDRIVE`
-   - **Hyperdrive configuration**: Select `home-dashboard-db`
-6. Click **Save**
+✅ **Hyperdrive Configuration**:
+- Created via `wrangler hyperdrive create` (Step 2.2)
+- ID added to `apps/web/wrangler.toml` (Step 1.1)
 
-#### Via wrangler.toml (Alternative):
-
-If you want to use `wrangler.toml` for deployment, create `apps/web/wrangler.toml`:
-
-```toml
-name = "home-dashboard-web"
-compatibility_date = "2024-09-23"
-compatibility_flags = ["nodejs_compat"]
-pages_build_output_dir = ".svelte-kit/cloudflare"
-
-[[hyperdrive]]
-binding = "HYPERDRIVE"
-id = "YOUR_HYPERDRIVE_ID_HERE"
-```
-
-Replace `YOUR_HYPERDRIVE_ID_HERE` with the ID from step 2.2.
+✅ **wrangler.toml File**:
+- Located at `apps/web/wrangler.toml`
+- Contains `nodejs_compat` flag
+- Contains Hyperdrive binding with your ID
 
 ### 3.4 Deploy
 
