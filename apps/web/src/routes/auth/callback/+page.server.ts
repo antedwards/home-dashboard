@@ -18,7 +18,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
   }
 
   // Check if user has completed their profile
-  const db = event.locals.db;
+  const db = locals.db;
 
   if (!db) {
     return json({ error: 'Database connection not available' }, { status: 500 });

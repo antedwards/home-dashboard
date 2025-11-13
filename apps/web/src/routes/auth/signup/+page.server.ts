@@ -29,7 +29,7 @@ export const actions: Actions = {
     }
 
     // Check if there's a valid invitation
-    const db = event.locals.db;
+    const db = locals.db;
 
   if (!db) {
     return json({ error: 'Database connection not available' }, { status: 500 });
@@ -91,7 +91,7 @@ export const actions: Actions = {
     }
 
     // Create user profile in database
-    const db = event.locals.db;
+    const db = locals.db;
 
   if (!db) {
     return json({ error: 'Database connection not available' }, { status: 500 });

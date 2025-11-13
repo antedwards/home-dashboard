@@ -13,10 +13,15 @@ export const load: PageServerLoad = async ({ locals }) => {
   }
 
   // Get user's family using Drizzle (bypasses RLS issues)
-  const db = event.locals.db;
+  const db = locals.db;
 
   if (!db) {
-    return json({ error: 'Database connection not available' }, { status: 500 });
+    console.error('Database connection not available');
+    return {
+      error: 'Database connection not available',
+      userId: session.user.id,
+      familyId: null,
+    };
   }
   const [member] = await db
     .select()
