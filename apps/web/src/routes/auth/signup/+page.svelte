@@ -1,98 +1,30 @@
 <script lang="ts">
-  import { goto } from '$app/navigation';
-  import { createSupabaseClient, hasValidInvitation, useInvitation } from '@home-dashboard/database';
+  import { enhance } from '$app/forms';
+  import type { ActionData } from './$types';
 
-  let email = $state('');
-  let password = $state('');
-  let confirmPassword = $state('');
-  let name = $state('');
+  interface Props {
+    form?: ActionData;
+  }
+
+  let { form }: Props = $props();
+
+  let email = $state(form?.email || '');
+  let name = $state(form?.name || '');
   let loading = $state(false);
-  let error = $state('');
-  let step = $state<'check' | 'signup'>('check');
+  let step = $state<'check' | 'signup'>(form?.step === 'signup' ? 'signup' : 'check');
 
-  const supabase = createSupabaseClient(
-    import.meta.env.VITE_SUPABASE_URL,
-    import.meta.env.VITE_SUPABASE_ANON_KEY
-  );
-
-  async function checkInvitation() {
-    if (!email) {
-      error = 'Please enter your email';
-      return;
+  // Update step when form response changes
+  $effect(() => {
+    if (form?.step) {
+      step = form.step as 'check' | 'signup';
     }
-
-    loading = true;
-    error = '';
-
-    try {
-      const isValid = await hasValidInvitation(supabase, email);
-
-      if (!isValid) {
-        error = 'No valid invitation found for this email. Please contact an admin.';
-        return;
-      }
-
-      step = 'signup';
-    } catch (err: any) {
-      error = err.message || 'Failed to check invitation';
-    } finally {
-      loading = false;
+    if (form?.email) {
+      email = form.email;
     }
-  }
-
-  async function handleSignup() {
-    if (!name || !password || !confirmPassword) {
-      error = 'Please fill in all fields';
-      return;
+    if (form?.name) {
+      name = form.name;
     }
-
-    if (password !== confirmPassword) {
-      error = 'Passwords do not match';
-      return;
-    }
-
-    if (password.length < 8) {
-      error = 'Password must be at least 8 characters';
-      return;
-    }
-
-    loading = true;
-    error = '';
-
-    try {
-      // Create user
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email,
-        password,
-      });
-
-      if (authError) throw authError;
-
-      if (!authData.user) {
-        throw new Error('Failed to create user');
-      }
-
-      // Create user profile
-      const { error: profileError } = await supabase.from('users').insert({
-        id: authData.user.id,
-        email,
-        name,
-        color: '#3B82F6',
-      });
-
-      if (profileError) throw profileError;
-
-      // Mark invitation as used
-      await useInvitation(supabase, email);
-
-      // Redirect to calendar
-      goto('/');
-    } catch (err: any) {
-      error = err.message || 'Failed to sign up';
-    } finally {
-      loading = false;
-    }
-  }
+  });
 </script>
 
 <svelte:head>
@@ -111,18 +43,29 @@
         </p>
       </div>
 
-      {#if error}
+      {#if form?.error}
         <div class="error-message">
-          {error}
+          {form.error}
         </div>
       {/if}
 
       {#if step === 'check'}
-        <form onsubmit={(e) => { e.preventDefault(); checkInvitation(); }}>
+        <form
+          method="POST"
+          action="?/checkInvitation"
+          use:enhance={() => {
+            loading = true;
+            return async ({ update }) => {
+              await update();
+              loading = false;
+            };
+          }}
+        >
           <div class="form-group">
             <label for="email">Email Address</label>
             <input
               id="email"
+              name="email"
               type="email"
               bind:value={email}
               placeholder="you@example.com"
@@ -137,11 +80,24 @@
           </button>
         </form>
       {:else}
-        <form onsubmit={(e) => { e.preventDefault(); handleSignup(); }}>
+        <form
+          method="POST"
+          action="?/signup"
+          use:enhance={() => {
+            loading = true;
+            return async ({ update }) => {
+              await update();
+              loading = false;
+            };
+          }}
+        >
+          <input type="hidden" name="email" value={email} />
+
           <div class="form-group">
             <label for="name">Full Name</label>
             <input
               id="name"
+              name="name"
               type="text"
               bind:value={name}
               placeholder="John Doe"
@@ -166,8 +122,8 @@
             <label for="password">Password</label>
             <input
               id="password"
+              name="password"
               type="password"
-              bind:value={password}
               placeholder="••••••••"
               disabled={loading}
               required
@@ -179,8 +135,8 @@
             <label for="confirm-password">Confirm Password</label>
             <input
               id="confirm-password"
+              name="confirmPassword"
               type="password"
-              bind:value={confirmPassword}
               placeholder="••••••••"
               disabled={loading}
               required
@@ -195,7 +151,7 @@
           <button
             type="button"
             class="btn-secondary"
-            onclick={() => { step = 'check'; error = ''; }}
+            onclick={() => { step = 'check'; }}
             disabled={loading}
           >
             Back

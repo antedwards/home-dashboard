@@ -1,13 +1,8 @@
 <script lang="ts">
-  import {
-    getCurrentWeek,
-    getHoursOfDay,
-    formatTime12Hour,
-    getDayName,
-    calculateEventPosition,
-    type CalendarDay,
-  } from '../utils/calendar';
+  import { onMount } from 'svelte';
+  import { getCurrentWeek, getDayName } from '../utils/calendar';
   import type { CalendarEvent } from '../types';
+  import TimeGrid from './TimeGrid.svelte';
 
   interface Props {
     date?: Date;
@@ -26,7 +21,10 @@
   }: Props = $props();
 
   const week = $derived(getCurrentWeek(date));
-  const hours = getHoursOfDay();
+  let timeGridContainer: HTMLDivElement;
+
+  // Check if this week contains today
+  const weekContainsToday = $derived(week.some(day => day.isToday));
 
   function getEventsForDay(day: Date): CalendarEvent[] {
     return events.filter((event) => {
@@ -39,40 +37,42 @@
     });
   }
 
-  function handleEventClick(event: CalendarEvent, e: MouseEvent) {
-    e.stopPropagation();
+  // Transform week data into columns for TimeGrid
+  const columns = $derived(week.map(day => ({
+    date: day.date,
+    events: getEventsForDay(day.date),
+    isToday: day.isToday
+  })));
+
+  function handleEventClick(event: CalendarEvent) {
     if (onEventClick) {
       onEventClick(event);
     }
   }
 
-  function handleTimeSlotClick(day: Date, hour: number) {
-    if (onTimeSlotClick) {
-      const slotDate = new Date(day);
-      slotDate.setHours(hour, 0, 0, 0);
-      onTimeSlotClick(slotDate, hour);
+  // Auto-scroll to current time when viewing this week
+  onMount(() => {
+    if (weekContainsToday && timeGridContainer) {
+      // Get current time
+      const now = new Date();
+      const currentHour = now.getHours();
+      const currentMinute = now.getMinutes();
+
+      // Each hour is 60px tall
+      const pixelsPerHour = 60;
+      const scrollPosition = (currentHour + currentMinute / 60) * pixelsPerHour;
+
+      // Center the current time in the view
+      const containerHeight = timeGridContainer.clientHeight;
+      const scrollTop = scrollPosition - containerHeight / 2;
+
+      // Instant scroll to position (no animation)
+      timeGridContainer.scrollTo({
+        top: Math.max(0, scrollTop),
+        behavior: 'instant',
+      });
     }
-  }
-
-  function formatEventTime(event: CalendarEvent): string {
-    const start = new Date(event.start);
-    const end = new Date(event.end);
-
-    if (event.all_day) {
-      return 'All day';
-    }
-
-    const startTime = start.toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-    });
-    const endTime = end.toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-    });
-
-    return `${startTime} - ${endTime}`;
-  }
+  });
 </script>
 
 <div class="week-view">
@@ -95,81 +95,13 @@
   </div>
 
   <!-- Time grid -->
-  <div class="time-grid-container">
-    <div class="time-grid">
-      <!-- Time labels -->
-      <div class="time-column">
-        {#each hours as hour}
-          <div class="time-label">
-            <span>{formatTime12Hour(hour)}</span>
-          </div>
-        {/each}
-      </div>
-
-      <!-- Day columns -->
-      {#each week as day}
-        {@const dayEvents = getEventsForDay(day.date)}
-        <div class="day-column" class:today-column={day.isToday}>
-          <!-- Hour slots -->
-          {#each hours as hour}
-            <button
-              class="time-slot"
-              onclick={() => handleTimeSlotClick(day.date, hour)}
-              type="button"
-            >
-              <!-- Empty slot for clicking -->
-            </button>
-          {/each}
-
-          <!-- All-day events -->
-          <div class="all-day-events">
-            {#each dayEvents.filter((e) => e.all_day) as event}
-              <button
-                class="event-block all-day-event"
-                style="background-color: {event.color || '#3b82f6'};"
-                onclick={(e) => handleEventClick(event, e)}
-                type="button"
-                title={event.title}
-              >
-                <div class="event-content">
-                  <div class="event-title">{event.title}</div>
-                </div>
-              </button>
-            {/each}
-          </div>
-
-          <!-- Timed events -->
-          <div class="timed-events">
-            {#each dayEvents.filter((e) => !e.all_day) as event}
-              {@const position = calculateEventPosition(
-                new Date(event.start),
-                new Date(event.end)
-              )}
-              <button
-                class="event-block timed-event"
-                style="
-                  background-color: {event.color || '#3b82f6'};
-                  top: {position.top}px;
-                  height: {position.height}px;
-                  min-height: {Math.max(position.height, 20)}px;
-                "
-                onclick={(e) => handleEventClick(event, e)}
-                type="button"
-                title={event.title}
-              >
-                <div class="event-content">
-                  <div class="event-title">{event.title}</div>
-                  <div class="event-time">{formatEventTime(event)}</div>
-                  {#if event.location}
-                    <div class="event-location">📍 {event.location}</div>
-                  {/if}
-                </div>
-              </button>
-            {/each}
-          </div>
-        </div>
-      {/each}
-    </div>
+  <div class="time-grid-container" bind:this={timeGridContainer}>
+    <TimeGrid
+      columns={columns}
+      maxVisibleEvents={2}
+      onEventClick={handleEventClick}
+      onTimeSlotClick={onTimeSlotClick}
+    />
   </div>
 </div>
 
@@ -184,14 +116,14 @@
 
   .week-header {
     display: grid;
-    grid-template-columns: 60px repeat(7, 1fr);
+    grid-template-columns: 80px repeat(7, 1fr);
     border-bottom: 2px solid #e0e0e0;
     background: #f9f9f9;
     flex-shrink: 0;
   }
 
   .time-gutter {
-    border-right: 1px solid #e0e0e0;
+    border-right: 2px solid #e0e0e0;
   }
 
   .day-header {
@@ -244,142 +176,9 @@
     overflow-x: hidden;
   }
 
-  .time-grid {
-    display: grid;
-    grid-template-columns: 60px repeat(7, 1fr);
-    position: relative;
-  }
-
-  .time-column {
-    border-right: 1px solid #e0e0e0;
-    background: #fafafa;
-  }
-
-  .time-label {
-    height: 60px;
-    display: flex;
-    align-items: flex-start;
-    justify-content: flex-end;
-    padding: 0.25rem 0.5rem;
-    font-size: 0.75rem;
-    color: #666;
-    border-bottom: 1px solid #f0f0f0;
-  }
-
-  .day-column {
-    position: relative;
-    border-right: 1px solid #e0e0e0;
-  }
-
-  .today-column {
-    background: #fafeff;
-  }
-
-  .time-slot {
-    height: 60px;
-    border-bottom: 1px solid #f0f0f0;
-    cursor: pointer;
-    border: none;
-    background: transparent;
-    width: 100%;
-    padding: 0;
-    transition: background-color 0.2s;
-  }
-
-  .time-slot:hover {
-    background: rgba(59, 130, 246, 0.05);
-  }
-
-  .all-day-events {
-    position: sticky;
-    top: 0;
-    z-index: 2;
-    background: inherit;
-    padding: 0.25rem;
-    border-bottom: 1px solid #e0e0e0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-  }
-
-  .timed-events {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    pointer-events: none;
-  }
-
-  .event-block {
-    pointer-events: auto;
-    border-radius: 4px;
-    padding: 0.25rem 0.5rem;
-    color: white;
-    font-size: 0.75rem;
-    cursor: pointer;
-    border: none;
-    text-align: left;
-    overflow: hidden;
-    transition: opacity 0.2s, transform 0.2s;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  }
-
-  .event-block:hover {
-    opacity: 0.9;
-    transform: scale(1.02);
-    z-index: 10;
-  }
-
-  .all-day-event {
-    position: relative;
-    width: 100%;
-  }
-
-  .timed-event {
-    position: absolute;
-    left: 2px;
-    right: 2px;
-  }
-
-  .event-content {
-    display: flex;
-    flex-direction: column;
-    gap: 0.125rem;
-  }
-
-  .event-title {
-    font-weight: 600;
-    line-height: 1.2;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .event-time {
-    font-size: 0.65rem;
-    opacity: 0.9;
-  }
-
-  .event-location {
-    font-size: 0.65rem;
-    opacity: 0.9;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
   @media (max-width: 768px) {
     .week-header {
-      grid-template-columns: 50px repeat(7, 1fr);
-    }
-
-    .time-grid {
-      grid-template-columns: 50px repeat(7, 1fr);
-    }
-
-    .time-label span {
-      font-size: 0.65rem;
+      grid-template-columns: 60px repeat(7, 1fr);
     }
 
     .day-name {
@@ -388,15 +187,6 @@
 
     .day-number {
       font-size: 1rem;
-    }
-
-    .event-title {
-      font-size: 0.7rem;
-    }
-
-    .event-time,
-    .event-location {
-      display: none;
     }
   }
 </style>

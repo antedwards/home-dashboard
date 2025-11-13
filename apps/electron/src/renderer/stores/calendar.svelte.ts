@@ -1,6 +1,5 @@
-import { getEvents, createEvent, updateEvent, deleteEvent, type Event } from '@home-dashboard/database/browser';
 import type { CalendarEvent } from '@home-dashboard/ui';
-import { supabase } from '../lib/supabase';
+import { apiClient } from '../lib/api-client';
 
 // Calendar state
 export class CalendarStore {
@@ -13,11 +12,11 @@ export class CalendarStore {
   userId = $state<string | null>(null);
 
   // Initialize the store with user and family data
-  async initialize(userId: string, familyId: string) {
+  async initialize(userId: string, familyId: string, accessToken: string) {
     this.userId = userId;
     this.familyId = familyId;
+    apiClient.setAccessToken(accessToken);
     await this.loadEvents();
-    this.subscribeToChanges();
   }
 
   // Load events for current month
@@ -34,7 +33,7 @@ export class CalendarStore {
       const startDate = new Date(year, month, 1);
       const endDate = new Date(year, month + 1, 0, 23, 59, 59);
 
-      const dbEvents = await getEvents(supabase, this.familyId, startDate, endDate);
+      const dbEvents = await apiClient.getEvents(startDate, endDate);
 
       // Convert database events to CalendarEvent format
       this.events = dbEvents.map(this.convertToCalendarEvent);
@@ -46,28 +45,6 @@ export class CalendarStore {
     }
   }
 
-  // Subscribe to real-time changes
-  private subscribeToChanges() {
-    if (!this.familyId) return;
-
-    supabase
-      .channel('calendar-changes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'events',
-          filter: `family_id=eq.${this.familyId}`,
-        },
-        (payload) => {
-          console.log('Event changed:', payload);
-          this.loadEvents(); // Reload events on any change
-        }
-      )
-      .subscribe();
-  }
-
   // Create a new event
   async addEvent(eventData: Partial<CalendarEvent>) {
     if (!this.familyId || !this.userId) return;
@@ -76,9 +53,7 @@ export class CalendarStore {
     this.error = null;
 
     try {
-      const newEvent = await createEvent(supabase, {
-        family_id: this.familyId,
-        user_id: this.userId,
+      const newEvent = await apiClient.createEvent({
         title: eventData.title!,
         description: eventData.description,
         start_time: eventData.start!,
@@ -86,7 +61,6 @@ export class CalendarStore {
         all_day: eventData.all_day || false,
         location: eventData.location,
         color: eventData.color,
-        category: eventData.category,
       });
 
       // Add to local state optimistically
@@ -108,7 +82,7 @@ export class CalendarStore {
     this.error = null;
 
     try {
-      const updated = await updateEvent(supabase, eventData.id, {
+      const updated = await apiClient.updateEvent(eventData.id, {
         title: eventData.title,
         description: eventData.description,
         start_time: eventData.start,
@@ -116,7 +90,6 @@ export class CalendarStore {
         all_day: eventData.all_day,
         location: eventData.location,
         color: eventData.color,
-        category: eventData.category,
       });
 
       // Update local state
@@ -139,7 +112,7 @@ export class CalendarStore {
     this.error = null;
 
     try {
-      await deleteEvent(supabase, eventId);
+      await apiClient.deleteEvent(eventId);
 
       // Remove from local state
       this.events = this.events.filter((e) => e.id !== eventId);
@@ -204,18 +177,18 @@ export class CalendarStore {
   }
 
   // Helper to convert database event to CalendarEvent
-  private convertToCalendarEvent(dbEvent: Event): CalendarEvent {
+  private convertToCalendarEvent(dbEvent: any): CalendarEvent {
     return {
       id: dbEvent.id,
       title: dbEvent.title,
       description: dbEvent.description,
-      start: dbEvent.start_time,
-      end: dbEvent.end_time,
-      all_day: dbEvent.all_day,
+      start: new Date(dbEvent.start_time || dbEvent.startTime),
+      end: new Date(dbEvent.end_time || dbEvent.endTime),
+      all_day: dbEvent.all_day ?? dbEvent.allDay,
       location: dbEvent.location,
       color: dbEvent.color,
       category: dbEvent.category,
-      userId: dbEvent.user_id,
+      userId: dbEvent.user_id || dbEvent.userId,
     };
   }
 }

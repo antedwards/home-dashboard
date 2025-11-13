@@ -1,122 +1,131 @@
 <script lang="ts">
-  let code = $state('');
+  import { onMount } from 'svelte';
+
+  let userCode = $state('');
+  let deviceCode = $state('');
+  let verificationUrl = $state('');
+  let interval = $state(5);
   let loading = $state(false);
   let error = $state('');
   let success = $state(false);
+  let polling = $state(false);
+  let status = $state('Requesting device code...');
 
-  async function openWebApp() {
-    const webAppUrl = import.meta.env.VITE_WEB_APP_URL || 'http://localhost:5173';
-    const deviceId = await window.electron.getDeviceId();
-    const deviceName = await window.electron.getDeviceName();
+  onMount(async () => {
+    await startDeviceFlow();
+  });
 
-    // Pass device info to web app for automatic pairing
-    const params = new URLSearchParams({
-      deviceId,
-      deviceName,
-    });
-
-    await window.electron.openExternal(`${webAppUrl}/devices/pair?${params}`);
-  }
-
-  async function handlePair() {
-    if (!code || code.trim().length === 0) {
-      error = 'Please enter a pairing code';
-      return;
-    }
-
-    const cleanCode = code.trim().toLowerCase();
-
+  async function startDeviceFlow() {
     loading = true;
     error = '';
 
     try {
-      // Generate a unique device ID
-      const deviceId = await window.electron.getDeviceId();
-      const deviceName = await window.electron.getDeviceName();
+      // Start the device flow (requests code from server)
+      const result = await window.electron.deviceFlow.start();
 
-      // Verify code and get token via IPC (runs in main process)
-      const authResult = await window.electron.auth.verifyPairingCode(
-        cleanCode,
-        deviceId,
-        deviceName
-      );
-
-      if (!authResult.success || !authResult.result) {
-        throw new Error(authResult.error || 'Failed to verify pairing code');
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to start device flow');
       }
 
-      // Store token securely
-      await window.electron.storeDeviceToken(authResult.result.token);
+      userCode = result.data.user_code;
+      deviceCode = result.data.device_code;
+      verificationUrl = result.data.verification_uri_complete;
+      interval = result.data.interval || 5;
+      status = 'Waiting for activation...';
+
+      // Start polling for authorization
+      pollForAuthorization();
+    } catch (err: any) {
+      error = err.message || 'Failed to start device pairing';
+      status = '';
+    } finally {
+      loading = false;
+    }
+  }
+
+  async function pollForAuthorization() {
+    polling = true;
+
+    try {
+      const result = await window.electron.deviceFlow.poll(deviceCode, interval);
+
+      if (!result.success) {
+        throw new Error(result.error || 'Device authorization failed');
+      }
 
       success = true;
+      status = 'Device activated! Loading...';
 
       // Reload app after successful pairing
       setTimeout(() => {
         window.location.reload();
-      }, 2000);
+      }, 1500);
     } catch (err: any) {
-      error = err.message || 'Failed to pair device. Please check the code and try again.';
+      error = err.message || 'Failed to authorize device';
+      status = '';
     } finally {
-      loading = false;
+      polling = false;
     }
+  }
+
+  async function openBrowser() {
+    if (verificationUrl) {
+      await window.electron.openExternal(verificationUrl);
+    }
+  }
+
+  async function retry() {
+    error = '';
+    success = false;
+    userCode = '';
+    verificationUrl = '';
+    await startDeviceFlow();
   }
 </script>
 
 <div class="pairing-container">
   <div class="pairing-card">
-    <div class="pairing-icon">🔐</div>
-
-    <h1>Pair Your Device</h1>
-    <p class="subtitle">
-      To use Home Dashboard, you'll need to pair this device with your account.
-    </p>
-
-    <div class="instructions">
-      <h3>How to Pair:</h3>
-      <ol>
-        <li>Click the button below to open the web app</li>
-        <li>Log in with your account</li>
-        <li>Device will pair automatically!</li>
-      </ol>
-      <p class="auto-pair-note">
-        ✨ No code needed - pairing happens automatically
-      </p>
-    </div>
-
-    <button class="btn-secondary" onclick={openWebApp}>
-      🌐 Open Web App for Automatic Pairing
-    </button>
-
     {#if success}
-      <div class="success-message">
-        ✅ Device paired successfully! Reloading...
+      <div class="success-icon">✅</div>
+      <h1>Device Paired!</h1>
+      <p class="subtitle">Your device is now connected. Loading app...</p>
+    {:else if loading}
+      <div class="pairing-icon">⏳</div>
+      <h1>Setting Up...</h1>
+      <p class="subtitle">{status}</p>
+    {:else if error}
+      <div class="error-icon">❌</div>
+      <h1>Pairing Failed</h1>
+      <div class="error-message">{error}</div>
+      <button class="btn-primary" onclick={retry}>Try Again</button>
+    {:else if userCode}
+      <div class="pairing-icon">🔗</div>
+      <h1>Activate Your Device</h1>
+      <p class="subtitle">Enter this code on the web app to connect your device</p>
+
+      <div class="code-display">
+        {userCode}
       </div>
-    {:else}
-      {#if error}
-        <div class="error-message">
-          {error}
+
+      <div class="instructions">
+        <h3>How to activate:</h3>
+        <ol>
+          <li>Click the button below to open your browser</li>
+          <li>Log in to your account if needed</li>
+          <li>The code will be pre-filled - just click "Activate"</li>
+        </ol>
+      </div>
+
+      <button class="btn-primary" onclick={openBrowser}>
+        🌐 Open Browser to Activate
+      </button>
+
+      {#if polling}
+        <div class="polling-status">
+          <div class="spinner"></div>
+          <p>Waiting for activation...</p>
         </div>
       {/if}
-
-      <form onsubmit={(e) => { e.preventDefault(); handlePair(); }}>
-        <div class="form-group">
-          <label for="code">Pairing Code</label>
-          <input
-            id="code"
-            type="text"
-            bind:value={code}
-            placeholder="word1-word2"
-            disabled={loading}
-            autocomplete="off"
-            class="code-input"
-          />
-          <p class="input-hint">Format: word-word (e.g., apple-mountain)</p>
-        </div>
-
-        <button type="submit" class="btn-primary" disabled={loading}>
-          {loading ? 'Pairing...' : 'Pair Device'}
-        </button>
-      </form>
     {/if}
   </div>
 </div>
@@ -186,14 +195,59 @@
     line-height: 1.5;
   }
 
-  .auto-pair-note {
-    margin: 1rem 0 0 0;
-    padding: 0.75rem;
-    background: #e0f2fe;
-    border-left: 3px solid #0284c7;
-    border-radius: 4px;
+  .code-display {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    font-size: 3rem;
+    font-weight: 700;
+    font-family: 'Courier New', monospace;
+    padding: 2rem;
+    border-radius: 16px;
+    margin: 2rem 0;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    box-shadow: 0 8px 20px rgba(102, 126, 234, 0.3);
+  }
+
+  .success-icon,
+  .error-icon {
+    font-size: 4rem;
+    margin-bottom: 1rem;
+  }
+
+  .polling-status {
+    margin-top: 2rem;
+    padding: 1.5rem;
+    background: #f7f8ff;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+  }
+
+  .spinner {
+    width: 24px;
+    height: 24px;
+    border: 3px solid #e0e0e0;
+    border-top: 3px solid #667eea;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    0% {
+      transform: rotate(0deg);
+    }
+    100% {
+      transform: rotate(360deg);
+    }
+  }
+
+  .polling-status p {
+    margin: 0;
+    color: #666;
     font-size: 0.875rem;
-    color: #0369a1;
     font-weight: 500;
   }
 

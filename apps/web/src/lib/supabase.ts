@@ -1,8 +1,12 @@
-import { createSupabaseClient } from '@home-dashboard/database';
+/**
+ * Client-side Supabase instance for browser
+ * Uses anon key with RLS for security
+ */
 
-// Singleton Supabase client for web app
-// This prevents multiple GoTrueClient instances warning
-export const supabase = createSupabaseClient(
-  import.meta.env.VITE_SUPABASE_URL,
-  import.meta.env.VITE_SUPABASE_ANON_KEY
+import { createBrowserClient } from '@supabase/ssr';
+import { PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_ANON_KEY } from '$env/static/public';
+
+export const supabase = createBrowserClient(
+  PUBLIC_SUPABASE_URL,
+  PUBLIC_SUPABASE_ANON_KEY
 );

@@ -1,6 +1,42 @@
 import type { SupabaseClient } from './client';
 import type { DevicePairingCode, DeviceToken } from './types';
-import { createHash, randomBytes } from 'crypto';
+
+// Web Crypto API helpers (works in both browser and Node.js 16+)
+function getRandomBytes(length: number): Uint8Array {
+  const array = new Uint8Array(length);
+  if (typeof globalThis.crypto !== 'undefined') {
+    globalThis.crypto.getRandomValues(array);
+  } else {
+    // Fallback for older environments
+    throw new Error('Web Crypto API not available');
+  }
+  return array;
+}
+
+function arrayBufferToHex(buffer: ArrayBuffer): string {
+  return Array.from(new Uint8Array(buffer))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+function arrayBufferToBase64Url(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary)
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=/g, '');
+}
+
+async function sha256Hash(text: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(text);
+  const hashBuffer = await globalThis.crypto.subtle.digest('SHA-256', data);
+  return arrayBufferToHex(hashBuffer);
+}
 
 // Word list for generating memorable 2-word codes
 const WORD_LIST = [
@@ -95,9 +131,27 @@ export async function verifyPairingCodeAndCreateToken(
     throw new Error('Invalid or expired pairing code');
   }
 
+  // Check if device is already paired
+  const { data: existingToken } = await client
+    .from('device_tokens')
+    .select('*')
+    .eq('user_id', pairingCode.user_id)
+    .eq('device_id', deviceId)
+    .single();
+
+  // If device already exists, delete the old token first
+  if (existingToken) {
+    await client
+      .from('device_tokens')
+      .delete()
+      .eq('user_id', pairingCode.user_id)
+      .eq('device_id', deviceId);
+  }
+
   // Generate long-lived token (90 days default)
-  const token = randomBytes(32).toString('hex');
-  const tokenHash = createHash('sha256').update(token).digest('hex');
+  const tokenBytes = getRandomBytes(32);
+  const token = arrayBufferToHex(tokenBytes);
+  const tokenHash = await sha256Hash(token);
 
   // Mark pairing code as used
   await client
@@ -149,9 +203,31 @@ export async function createDeviceTokenDirect(
     throw new Error('Not authenticated');
   }
 
+  // Check if device is already paired
+  const { data: existingToken } = await client
+    .from('device_tokens')
+    .select('*')
+    .eq('user_id', user.id)
+    .eq('device_id', deviceId)
+    .single();
+
+  // If device already exists, delete the old token first
+  if (existingToken) {
+    await client
+      .from('device_tokens')
+      .delete()
+      .eq('user_id', user.id)
+      .eq('device_id', deviceId);
+  }
+
   // Generate a secure random token
-  const token = randomBytes(32).toString('base64url');
-  const tokenHash = createHash('sha256').update(token).digest('hex');
+  const tokenBytes = getRandomBytes(32);
+  const token = arrayBufferToBase64Url(tokenBytes);
+  const tokenHash = await sha256Hash(token);
+
+  console.log('[createDeviceTokenDirect] Generated token length:', token.length);
+  console.log('[createDeviceTokenDirect] Token hash:', tokenHash.substring(0, 16) + '...');
+  console.log('[createDeviceTokenDirect] Device ID:', deviceId);
 
   // Create device token
   const { data: deviceToken, error: tokenError } = await client
@@ -167,7 +243,12 @@ export async function createDeviceTokenDirect(
     .select()
     .single();
 
-  if (tokenError) throw tokenError;
+  if (tokenError) {
+    console.error('[createDeviceTokenDirect] Failed to insert token:', tokenError);
+    throw tokenError;
+  }
+
+  console.log('[createDeviceTokenDirect] Token created successfully');
 
   return {
     token, // Return plain token to be stored by Electron
@@ -184,7 +265,10 @@ export async function verifyDeviceToken(
   token: string,
   deviceId: string
 ): Promise<{ valid: boolean; userId?: string; needsRefresh?: boolean }> {
-  const tokenHash = createHash('sha256').update(token).digest('hex');
+  const tokenHash = await sha256Hash(token);
+
+  console.log('[verifyDeviceToken] Looking for token with hash:', tokenHash.substring(0, 16) + '...');
+  console.log('[verifyDeviceToken] Device ID:', deviceId);
 
   const { data: deviceToken, error } = await client
     .from('device_tokens')
@@ -193,7 +277,13 @@ export async function verifyDeviceToken(
     .eq('device_id', deviceId)
     .single();
 
-  if (error || !deviceToken) {
+  if (error) {
+    console.error('[verifyDeviceToken] Database error:', error);
+    return { valid: false };
+  }
+
+  if (!deviceToken) {
+    console.log('[verifyDeviceToken] No matching token found in database');
     return { valid: false };
   }
 

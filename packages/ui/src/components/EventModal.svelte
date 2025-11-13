@@ -1,23 +1,29 @@
 <script lang="ts">
-  import type { CalendarEvent } from '../types';
+  import type { CalendarEvent, User, Category } from '../types';
   import Modal from './Modal.svelte';
 
   interface Props {
     open: boolean;
     event?: CalendarEvent | null;
     initialDate?: Date;
+    familyMembers?: User[];
+    categories?: Category[];
     onClose: () => void;
     onSave: (event: Partial<CalendarEvent>) => void;
     onDelete?: (id: string) => void;
+    onCategoryCreate?: (name: string, color: string) => Promise<Category>;
   }
 
   let {
     open = $bindable(false),
     event = null,
     initialDate = new Date(),
+    familyMembers = [],
+    categories = [],
     onClose,
     onSave,
     onDelete,
+    onCategoryCreate,
   }: Props = $props();
 
   const isEditing = $derived(!!event);
@@ -31,8 +37,13 @@
   let endTime = $state('');
   let allDay = $state(false);
   let location = $state('');
-  let color = $state('#3b82f6');
-  let category = $state('');
+  let selectedCategoryId = $state<string | null>(null);
+  let selectedAttendeeIds = $state<string[]>([]);
+
+  // For creating new category
+  let showNewCategoryInput = $state(false);
+  let newCategoryName = $state('');
+  let newCategoryColor = $state('#3b82f6');
 
   // Initialize form when modal opens
   $effect(() => {
@@ -50,8 +61,8 @@
         endTime = end.toTimeString().slice(0, 5);
         allDay = event.all_day;
         location = event.location || '';
-        color = event.color || '#3b82f6';
-        category = event.category || '';
+        selectedCategoryId = event.categoryId || null;
+        selectedAttendeeIds = event.attendeeIds || [];
       } else {
         // Creating new event
         const start = initialDate || new Date();
@@ -65,11 +76,45 @@
         endTime = end.toTimeString().slice(0, 5);
         allDay = false;
         location = '';
-        color = '#3b82f6';
-        category = '';
+        selectedCategoryId = null;
+        selectedAttendeeIds = [];
       }
+      showNewCategoryInput = false;
+      newCategoryName = '';
+      newCategoryColor = '#3b82f6';
     }
   });
+
+  function toggleAttendee(userId: string) {
+    if (selectedAttendeeIds.includes(userId)) {
+      selectedAttendeeIds = selectedAttendeeIds.filter(id => id !== userId);
+    } else {
+      selectedAttendeeIds = [...selectedAttendeeIds, userId];
+    }
+  }
+
+  function selectCategory(categoryId: string) {
+    selectedCategoryId = categoryId;
+  }
+
+  function getInitials(name: string): string {
+    return name
+      .split(' ')
+      .map(part => part[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 2);
+  }
+
+  async function handleCreateCategory() {
+    if (!newCategoryName.trim() || !onCategoryCreate) return;
+
+    const newCategory = await onCategoryCreate(newCategoryName.trim(), newCategoryColor);
+    selectedCategoryId = newCategory.id;
+    showNewCategoryInput = false;
+    newCategoryName = '';
+    newCategoryColor = '#3b82f6';
+  }
 
   function handleSubmit(e: SubmitEvent) {
     e.preventDefault();
@@ -97,8 +142,8 @@
       end: end.toISOString(),
       all_day: allDay,
       location: location.trim() || undefined,
-      color,
-      category: category.trim() || undefined,
+      categoryId: selectedCategoryId || undefined,
+      attendeeIds: selectedAttendeeIds.length > 0 ? selectedAttendeeIds : undefined,
     };
 
     onSave(eventData);
@@ -211,37 +256,94 @@
         ></textarea>
       </div>
 
-      <!-- Color -->
+      <!-- Family Members -->
+      {#if familyMembers.length > 0}
+        <div class="form-group">
+          <label>Family Members</label>
+          <div class="chip-selector">
+            {#each familyMembers as member}
+              <button
+                type="button"
+                class="avatar-chip"
+                class:selected={selectedAttendeeIds.includes(member.id)}
+                style="--member-color: {member.color};"
+                onclick={() => toggleAttendee(member.id)}
+                title={member.name}
+              >
+                <span class="avatar-initials" style="background-color: {member.color};">
+                  {getInitials(member.name)}
+                </span>
+                <span class="avatar-name">{member.name}</span>
+              </button>
+            {/each}
+          </div>
+        </div>
+      {/if}
+
+      <!-- Categories -->
       <div class="form-group">
-        <label>Color</label>
-        <div class="color-picker">
-          {#each colorOptions as colorOption}
+        <label>Category</label>
+        <div class="chip-selector">
+          {#each categories as cat}
             <button
               type="button"
-              class="color-swatch"
-              class:selected={color === colorOption.value}
-              style="background-color: {colorOption.value};"
-              onclick={() => (color = colorOption.value)}
-              title={colorOption.name}
+              class="category-chip"
+              class:selected={selectedCategoryId === cat.id}
+              style="background-color: {selectedCategoryId === cat.id ? cat.color : 'transparent'}; border-color: {cat.color}; color: {selectedCategoryId === cat.id ? 'white' : cat.color};"
+              onclick={() => selectCategory(cat.id)}
             >
-              {#if color === colorOption.value}
-                <span class="checkmark">✓</span>
-              {/if}
+              {cat.name}
             </button>
           {/each}
+
+          {#if showNewCategoryInput}
+            <div class="new-category-input">
+              <input
+                type="text"
+                bind:value={newCategoryName}
+                placeholder="Category name"
+                class="small-input"
+              />
+              <div class="mini-color-picker">
+                {#each colorOptions.slice(0, 5) as colorOption}
+                  <button
+                    type="button"
+                    class="mini-color-swatch"
+                    class:selected={newCategoryColor === colorOption.value}
+                    style="background-color: {colorOption.value};"
+                    onclick={() => (newCategoryColor = colorOption.value)}
+                    title={colorOption.name}
+                  ></button>
+                {/each}
+              </div>
+              <button
+                type="button"
+                class="btn-create-category"
+                onclick={handleCreateCategory}
+              >
+                Add
+              </button>
+              <button
+                type="button"
+                class="btn-cancel-category"
+                onclick={() => showNewCategoryInput = false}
+              >
+                ✕
+              </button>
+            </div>
+          {:else}
+            <button
+              type="button"
+              class="add-chip"
+              onclick={() => showNewCategoryInput = true}
+              title="Add new category"
+            >
+              + New
+            </button>
+          {/if}
         </div>
       </div>
 
-      <!-- Category -->
-      <div class="form-group">
-        <label for="event-category">Category</label>
-        <input
-          id="event-category"
-          type="text"
-          bind:value={category}
-          placeholder="e.g., Work, Personal, Family"
-        />
-      </div>
     </div>
 
     <div class="form-footer">
@@ -266,8 +368,8 @@
 
 <style>
   .event-form {
-    width: 100%;
-    max-width: 600px;
+    width: 900px;
+    max-width: calc(90vw - 2rem);
     display: flex;
     flex-direction: column;
     max-height: 90vh;
@@ -318,6 +420,7 @@
     font-size: 0.875rem;
     font-family: inherit;
     transition: border-color 0.2s, box-shadow 0.2s;
+    box-sizing: border-box;
   }
 
   .form-group input:focus,
@@ -350,42 +453,6 @@
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 1rem;
-  }
-
-  .color-picker {
-    display: flex;
-    gap: 0.5rem;
-    flex-wrap: wrap;
-  }
-
-  .color-swatch {
-    width: 40px;
-    height: 40px;
-    border-radius: 8px;
-    border: 2px solid transparent;
-    cursor: pointer;
-    transition: all 0.2s;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    position: relative;
-  }
-
-  .color-swatch:hover {
-    transform: scale(1.1);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-  }
-
-  .color-swatch.selected {
-    border-color: #333;
-    box-shadow: 0 0 0 2px white, 0 0 0 4px #333;
-  }
-
-  .checkmark {
-    color: white;
-    font-size: 1.25rem;
-    font-weight: bold;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
   }
 
   .form-footer {
@@ -443,6 +510,159 @@
     background: #dc2626;
   }
 
+  /* Chip Selectors */
+  .chip-selector {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+  }
+
+  .avatar-chip {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.375rem 0.75rem;
+    border: 2px solid #e0e0e0;
+    border-radius: 20px;
+    background: white;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-size: 0.875rem;
+  }
+
+  .avatar-chip:hover {
+    border-color: var(--member-color, #3b82f6);
+    background: rgba(59, 130, 246, 0.05);
+  }
+
+  .avatar-chip.selected {
+    border-color: var(--member-color, #3b82f6);
+    background: rgba(59, 130, 246, 0.1);
+    font-weight: 600;
+  }
+
+  .avatar-initials {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+
+  .avatar-name {
+    color: #333;
+  }
+
+  .category-chip {
+    padding: 0.375rem 0.875rem;
+    border: 2px solid;
+    border-radius: 16px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .category-chip:hover {
+    opacity: 0.8;
+    transform: translateY(-1px);
+  }
+
+  .category-chip.selected {
+    font-weight: 600;
+  }
+
+  .add-chip {
+    padding: 0.375rem 0.875rem;
+    border: 2px dashed #d1d5db;
+    border-radius: 16px;
+    background: transparent;
+    color: #666;
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .add-chip:hover {
+    border-color: #3b82f6;
+    color: #3b82f6;
+    background: rgba(59, 130, 246, 0.05);
+  }
+
+  .new-category-input {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    border: 2px solid #3b82f6;
+    border-radius: 8px;
+    background: #f9fafb;
+  }
+
+  .small-input {
+    padding: 0.25rem 0.5rem;
+    border: 1px solid #d1d5db;
+    border-radius: 4px;
+    font-size: 0.875rem;
+    width: 120px;
+  }
+
+  .mini-color-picker {
+    display: flex;
+    gap: 0.25rem;
+  }
+
+  .mini-color-swatch {
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+    border: 2px solid transparent;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .mini-color-swatch:hover {
+    transform: scale(1.1);
+  }
+
+  .mini-color-swatch.selected {
+    border-color: #333;
+  }
+
+  .btn-create-category,
+  .btn-cancel-category {
+    padding: 0.25rem 0.75rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    transition: all 0.2s;
+  }
+
+  .btn-create-category {
+    background: #3b82f6;
+    color: white;
+  }
+
+  .btn-create-category:hover {
+    background: #2563eb;
+  }
+
+  .btn-cancel-category {
+    background: #e0e0e0;
+    color: #666;
+  }
+
+  .btn-cancel-category:hover {
+    background: #d1d5db;
+  }
+
   @media (max-width: 640px) {
     .event-form {
       max-width: 100%;
@@ -450,6 +670,10 @@
 
     .form-row {
       grid-template-columns: 1fr;
+    }
+
+    .avatar-name {
+      display: none;
     }
   }
 </style>

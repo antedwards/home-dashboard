@@ -8,9 +8,9 @@ export interface CalendarEvent {
   allDay: boolean;
   description?: string;
   location?: string;
-  color?: string;
-  category?: string;
+  categoryId?: string;
   userId?: string;
+  attendeeIds?: string[]; // Family member IDs assigned to this event
 }
 
 export interface Chore {
@@ -45,5 +45,11 @@ export interface User {
   name: string;
   email: string;
   avatar?: string;
+  color: string;
+}
+
+export interface Category {
+  id: string;
+  name: string;
   color: string;
 }

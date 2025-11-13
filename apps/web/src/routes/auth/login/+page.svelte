@@ -1,44 +1,15 @@
 <script lang="ts">
-  import { goto } from '$app/navigation';
-  import { createSupabaseClient } from '@home-dashboard/database';
+  import { enhance } from '$app/forms';
+  import type { ActionData } from './$types';
 
-  let email = $state('');
-  let password = $state('');
-  let loading = $state(false);
-  let error = $state('');
-
-  const supabase = createSupabaseClient(
-    import.meta.env.VITE_SUPABASE_URL,
-    import.meta.env.VITE_SUPABASE_ANON_KEY
-  );
-
-  async function handleLogin() {
-    if (!email || !password) {
-      error = 'Please fill in all fields';
-      return;
-    }
-
-    loading = true;
-    error = '';
-
-    try {
-      const { data, error: authError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
-      if (authError) throw authError;
-
-      if (data.user) {
-        // Redirect to calendar
-        goto('/');
-      }
-    } catch (err: any) {
-      error = err.message || 'Failed to sign in';
-    } finally {
-      loading = false;
-    }
+  interface Props {
+    form?: ActionData;
   }
+
+  let { form }: Props = $props();
+
+  let email = $state(form?.email || '');
+  let loading = $state(false);
 </script>
 
 <svelte:head>
@@ -53,17 +24,27 @@
         <p>Sign in to your Home Dashboard</p>
       </div>
 
-      {#if error}
+      {#if form?.error}
         <div class="error-message">
-          {error}
+          {form.error}
         </div>
       {/if}
 
-      <form onsubmit={(e) => { e.preventDefault(); handleLogin(); }}>
+      <form
+        method="POST"
+        use:enhance={() => {
+          loading = true;
+          return async ({ update }) => {
+            await update();
+            loading = false;
+          };
+        }}
+      >
         <div class="form-group">
           <label for="email">Email</label>
           <input
             id="email"
+            name="email"
             type="email"
             bind:value={email}
             placeholder="you@example.com"
@@ -77,8 +58,8 @@
           <label for="password">Password</label>
           <input
             id="password"
+            name="password"
             type="password"
-            bind:value={password}
             placeholder="••••••••"
             disabled={loading}
             required

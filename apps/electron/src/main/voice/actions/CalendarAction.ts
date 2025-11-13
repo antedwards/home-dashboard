@@ -6,7 +6,6 @@ import type {
   CommandIntent,
   EventParameters,
 } from '../types';
-import { createSupabaseClient, createEvent } from '@home-dashboard/database';
 
 /**
  * Handles calendar-related voice commands
@@ -15,10 +14,19 @@ export class CalendarAction implements ActionHandler {
   readonly name = 'CalendarAction';
   readonly intents: CommandIntent[] = ['CREATE_EVENT'];
 
-  private supabase = createSupabaseClient(
-    process.env.VITE_SUPABASE_URL!,
-    process.env.VITE_SUPABASE_ANON_KEY!
-  );
+  private baseUrl: string;
+  private accessToken: string | null = null;
+
+  constructor() {
+    this.baseUrl = process.env.VITE_WEB_APP_URL || 'http://localhost:5173';
+  }
+
+  /**
+   * Set the access token for API calls
+   */
+  setAccessToken(token: string) {
+    this.accessToken = token;
+  }
 
   canHandle(command: ParsedCommand): boolean {
     return this.intents.includes(command.intent);
@@ -38,7 +46,7 @@ export class CalendarAction implements ActionHandler {
   }
 
   /**
-   * Create a calendar event
+   * Create a calendar event via API
    */
   private async createEvent(
     params: EventParameters,
@@ -49,19 +57,30 @@ export class CalendarAction implements ActionHandler {
       const startTime = this.calculateStartTime(params);
       const endTime = this.calculateEndTime(params, startTime);
 
-      // Create the event in Supabase
-      const event = await createEvent(this.supabase, {
-        family_id: context.familyId,
-        user_id: context.userId,
-        title: params.title,
-        description: params.description,
-        start_time: startTime,
-        end_time: endTime,
-        all_day: params.allDay || false,
-        location: params.location,
-        color: '#667eea', // Default color
-        category: 'general',
+      // Call API to create event
+      const response = await fetch(`${this.baseUrl}/api/events`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(this.accessToken ? { 'Authorization': `Bearer ${this.accessToken}` } : {}),
+        },
+        body: JSON.stringify({
+          title: params.title,
+          description: params.description,
+          start_time: startTime.toISOString(),
+          end_time: endTime.toISOString(),
+          all_day: params.allDay || false,
+          location: params.location,
+          color: '#667eea', // Default color
+        }),
       });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ error: 'Failed to create event' }));
+        throw new Error(error.error || `HTTP ${response.status}`);
+      }
+
+      const event = await response.json();
 
       // Format success message
       const message = this.formatSuccessMessage(params, startTime);

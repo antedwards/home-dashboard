@@ -80,7 +80,7 @@
               {#each dayEvents.slice(0, 3) as event}
                 <button
                   class="event-pill"
-                  style="background-color: {event.color || '#3b82f6'};"
+                  style="background-color: #3b82f6;"
                   onclick={(e) => handleEventClick(event, e)}
                   type="button"
                   title={event.title}

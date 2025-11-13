@@ -1,22 +1,29 @@
-import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 import { app } from 'electron';
+import * as fs from 'fs';
 
 /**
  * Speech recognizer using Whisper for offline transcription
+ * Models are bundled with the app in production, or use ~/.cache in development
  */
 export class SpeechRecognizer {
   private whisper: any = null;
-  private modelPath: string;
   private initialized: boolean = false;
+  private modelPath: string;
 
   constructor(
     private model: 'tiny' | 'base' | 'small' | 'medium' | 'large' = 'base',
     private language: string = 'en'
   ) {
-    // Store models in app data directory
-    const userDataPath = app.getPath('userData');
-    this.modelPath = path.join(userDataPath, 'whisper-models');
+    // Determine model path based on environment
+    if (app.isPackaged) {
+      // Production: use bundled models
+      this.modelPath = path.join(process.resourcesPath, 'whisper-models');
+    } else {
+      // Development: use downloaded models in user cache
+      this.modelPath = path.join(os.homedir(), '.cache', 'whisper-node');
+    }
   }
 
   /**
@@ -27,22 +34,25 @@ export class SpeechRecognizer {
 
     try {
       console.log('Initializing Whisper speech recognizer...');
+      console.log('Model path:', this.modelPath);
 
-      // Ensure model directory exists
+      // Check if models exist
       if (!fs.existsSync(this.modelPath)) {
-        fs.mkdirSync(this.modelPath, { recursive: true });
+        throw new Error(`Whisper models not found at ${this.modelPath}. Run "npm run download:models"`);
       }
 
-      // Lazy load whisper-node (it will download model on first use)
+      // Lazy load whisper-node
       const { whisper } = await import('whisper-node');
 
       this.whisper = whisper;
       this.initialized = true;
 
       console.log('✅ Whisper initialized successfully');
-    } catch (error) {
-      console.error('Failed to initialize Whisper:', error);
-      throw new Error('Failed to initialize speech recognizer');
+    } catch (error: any) {
+      console.warn('⚠️  Whisper initialization failed - voice commands will be unavailable');
+      console.warn('⚠️  Error:', error.message);
+      // Don't throw - allow app to continue without voice features
+      this.initialized = false;
     }
   }
 
@@ -54,13 +64,19 @@ export class SpeechRecognizer {
       await this.initialize();
     }
 
+    if (!this.initialized || !this.whisper) {
+      throw new Error('Speech recognizer not available - Whisper needs to be compiled');
+    }
+
     try {
       console.log(`Transcribing audio: ${audioFilePath}`);
 
       // Transcribe using Whisper
+      // Use full path to model file
+      const modelFile = path.join(this.modelPath, `ggml-${this.model}.bin`);
+
       const result = await this.whisper(audioFilePath, {
-        modelName: this.model,
-        modelPath: this.modelPath,
+        modelPath: modelFile,
         whisperOptions: {
           language: this.language,
           word_timestamps: false,

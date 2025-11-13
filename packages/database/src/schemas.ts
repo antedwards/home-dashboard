@@ -12,6 +12,15 @@ export const UserSchema = z.object({
   updated_at: z.string().datetime(),
 });
 
+export const CategorySchema = z.object({
+  id: z.string().uuid(),
+  family_id: z.string().uuid(),
+  name: z.string().min(1),
+  color: z.string().regex(/^#[0-9A-F]{6}$/i),
+  created_at: z.string().datetime(),
+  updated_at: z.string().datetime(),
+});
+
 export const EventSchema = z.object({
   id: z.string().uuid(),
   family_id: z.string().uuid(),
@@ -22,13 +31,19 @@ export const EventSchema = z.object({
   end_time: z.string().datetime(),
   all_day: z.boolean(),
   location: z.string().optional(),
-  color: z.string().regex(/^#[0-9A-F]{6}$/i).optional(),
-  category: z.string().optional(),
+  category_id: z.string().uuid().optional(),
   recurrence_rule: z.string().optional(),
   external_id: z.string().optional(),
   external_source: z.enum(['google', 'outlook', 'apple', 'ical']).optional(),
   created_at: z.string().datetime(),
   updated_at: z.string().datetime(),
+});
+
+export const EventAttendeeSchema = z.object({
+  id: z.string().uuid(),
+  event_id: z.string().uuid(),
+  user_id: z.string().uuid(),
+  created_at: z.string().datetime(),
 });
 
 export const ChoreSchema = z.object({

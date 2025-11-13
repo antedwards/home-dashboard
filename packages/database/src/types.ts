@@ -53,6 +53,16 @@ export interface Database {
         Insert: Omit<ListItem, 'id' | 'created_at' | 'updated_at'>;
         Update: Partial<Omit<ListItem, 'id' | 'created_at'>>;
       };
+      categories: {
+        Row: Category;
+        Insert: Omit<Category, 'id' | 'created_at' | 'updated_at'>;
+        Update: Partial<Omit<Category, 'id' | 'created_at'>>;
+      };
+      event_attendees: {
+        Row: EventAttendee;
+        Insert: Omit<EventAttendee, 'id' | 'created_at'>;
+        Update: Partial<Omit<EventAttendee, 'id' | 'created_at'>>;
+      };
     };
   };
 }
@@ -129,8 +139,7 @@ export interface Event {
   end_time: string;
   all_day: boolean;
   location?: string;
-  color?: string;
-  category?: string;
+  category_id?: string;
   recurrence_rule?: string;
   external_id?: string;
   external_source?: 'google' | 'outlook' | 'apple' | 'ical';
@@ -172,4 +181,20 @@ export interface ListItem {
   order: number;
   created_at: string;
   updated_at: string;
+}
+
+export interface Category {
+  id: string;
+  family_id: string;
+  name: string;
+  color: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EventAttendee {
+  id: string;
+  event_id: string;
+  user_id: string;
+  created_at: string;
 }

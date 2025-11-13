@@ -1,11 +1,8 @@
 <script lang="ts">
-  import {
-    getHoursOfDay,
-    formatTime12Hour,
-    calculateEventPosition,
-    formatDate,
-  } from '../utils/calendar';
+  import { onMount } from 'svelte';
+  import { formatDate } from '../utils/calendar';
   import type { CalendarEvent } from '../types';
+  import TimeGrid from './TimeGrid.svelte';
 
   interface Props {
     date?: Date;
@@ -21,7 +18,7 @@
     onTimeSlotClick,
   }: Props = $props();
 
-  const hours = getHoursOfDay();
+  let timeGridContainer: HTMLDivElement;
   const isToday = $derived(
     date.toDateString() === new Date().toDateString()
   );
@@ -38,42 +35,36 @@
   );
 
   const allDayEvents = $derived(dayEvents.filter((e) => e.all_day));
-  const timedEvents = $derived(dayEvents.filter((e) => !e.all_day));
 
-  function handleEventClick(event: CalendarEvent, e: MouseEvent) {
-    e.stopPropagation();
+  function handleEventClick(event: CalendarEvent) {
     if (onEventClick) {
       onEventClick(event);
     }
   }
 
-  function handleTimeSlotClick(hour: number) {
-    if (onTimeSlotClick) {
-      const slotDate = new Date(date);
-      slotDate.setHours(hour, 0, 0, 0);
-      onTimeSlotClick(slotDate, hour);
+  // Auto-scroll to current time when viewing today
+  onMount(() => {
+    if (isToday && timeGridContainer) {
+      // Get current time
+      const now = new Date();
+      const currentHour = now.getHours();
+      const currentMinute = now.getMinutes();
+
+      // Each hour is 60px tall
+      const pixelsPerHour = 60;
+      const scrollPosition = (currentHour + currentMinute / 60) * pixelsPerHour;
+
+      // Center the current time in the view
+      const containerHeight = timeGridContainer.clientHeight;
+      const scrollTop = scrollPosition - containerHeight / 2;
+
+      // Instant scroll to position (no animation)
+      timeGridContainer.scrollTo({
+        top: Math.max(0, scrollTop),
+        behavior: 'instant',
+      });
     }
-  }
-
-  function formatEventTime(event: CalendarEvent): string {
-    const start = new Date(event.start);
-    const end = new Date(event.end);
-
-    if (event.all_day) {
-      return 'All day';
-    }
-
-    const startTime = start.toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-    });
-    const endTime = end.toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-    });
-
-    return `${startTime} - ${endTime}`;
-  }
+  });
 </script>
 
 <div class="day-view">
@@ -87,7 +78,7 @@
           {#each allDayEvents as event}
             <button
               class="event-block all-day-event"
-              style="background-color: {event.color || '#3b82f6'};"
+              style="background-color: #3b82f6;"
               onclick={(e) => handleEventClick(event, e)}
               type="button"
             >
@@ -103,56 +94,17 @@
   </div>
 
   <!-- Time grid -->
-  <div class="time-grid-container">
-    <div class="time-grid">
-      <!-- Time slots -->
-      {#each hours as hour}
-        <div class="time-row">
-          <div class="time-label">
-            <span>{formatTime12Hour(hour)}</span>
-          </div>
-          <button
-            class="time-slot"
-            onclick={() => handleTimeSlotClick(hour)}
-            type="button"
-          >
-            <!-- Empty for clicking -->
-          </button>
-        </div>
-      {/each}
-
-      <!-- Timed events overlay -->
-      <div class="events-overlay">
-        {#each timedEvents as event}
-          {@const position = calculateEventPosition(
-            new Date(event.start),
-            new Date(event.end)
-          )}
-          <button
-            class="event-block timed-event"
-            style="
-              background-color: {event.color || '#3b82f6'};
-              top: {position.top}px;
-              height: {position.height}px;
-              min-height: {Math.max(position.height, 30)}px;
-            "
-            onclick={(e) => handleEventClick(event, e)}
-            type="button"
-          >
-            <div class="event-content">
-              <div class="event-title">{event.title}</div>
-              <div class="event-time">{formatEventTime(event)}</div>
-              {#if event.location}
-                <div class="event-location">📍 {event.location}</div>
-              {/if}
-              {#if event.description && position.height > 60}
-                <div class="event-description">{event.description}</div>
-              {/if}
-            </div>
-          </button>
-        {/each}
-      </div>
-    </div>
+  <div class="time-grid-container" bind:this={timeGridContainer}>
+    <TimeGrid
+      columns={[{
+        date: date,
+        events: dayEvents,
+        isToday: isToday
+      }]}
+      maxVisibleEvents={3}
+      onEventClick={handleEventClick}
+      onTimeSlotClick={onTimeSlotClick}
+    />
   </div>
 </div>
 
@@ -207,52 +159,6 @@
     overflow-x: hidden;
   }
 
-  .time-grid {
-    position: relative;
-    min-height: 100%;
-  }
-
-  .time-row {
-    display: grid;
-    grid-template-columns: 80px 1fr;
-    height: 60px;
-    border-bottom: 1px solid #f0f0f0;
-  }
-
-  .time-label {
-    display: flex;
-    align-items: flex-start;
-    justify-content: flex-end;
-    padding: 0.5rem 1rem;
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: #666;
-    background: #fafafa;
-    border-right: 2px solid #e0e0e0;
-  }
-
-  .time-slot {
-    cursor: pointer;
-    border: none;
-    background: transparent;
-    width: 100%;
-    padding: 0;
-    transition: background-color 0.2s;
-  }
-
-  .time-slot:hover {
-    background: rgba(59, 130, 246, 0.05);
-  }
-
-  .events-overlay {
-    position: absolute;
-    top: 0;
-    left: 80px;
-    right: 0;
-    bottom: 0;
-    pointer-events: none;
-  }
-
   .event-block {
     pointer-events: auto;
     border-radius: 6px;
@@ -274,34 +180,12 @@
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
   }
 
-  .all-day-event {
-    position: relative;
-  }
-
-  .timed-event {
-    position: absolute;
-    left: 4px;
-    right: 4px;
-  }
-
-  .event-content {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-    height: 100%;
-  }
-
   .event-title {
     font-weight: 600;
     font-size: 0.875rem;
     line-height: 1.3;
     overflow: hidden;
     text-overflow: ellipsis;
-  }
-
-  .event-time {
-    font-size: 0.75rem;
-    opacity: 0.9;
   }
 
   .event-location {
@@ -312,17 +196,6 @@
     white-space: nowrap;
   }
 
-  .event-description {
-    font-size: 0.75rem;
-    opacity: 0.85;
-    line-height: 1.4;
-    overflow: hidden;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    margin-top: 0.25rem;
-  }
-
   @media (max-width: 768px) {
     .day-header {
       padding: 1rem;
@@ -330,28 +203,6 @@
 
     .day-header h2 {
       font-size: 1.25rem;
-    }
-
-    .time-row {
-      grid-template-columns: 60px 1fr;
-    }
-
-    .time-label {
-      padding: 0.5rem 0.5rem;
-      font-size: 0.75rem;
-    }
-
-    .events-overlay {
-      left: 60px;
-    }
-
-    .event-title {
-      font-size: 0.8rem;
-    }
-
-    .event-time,
-    .event-location {
-      font-size: 0.7rem;
     }
   }
 </style>

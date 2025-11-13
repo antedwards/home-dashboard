@@ -10,16 +10,23 @@ contextBridge.exposeInMainWorld('electron', {
   // Device authentication
   getDeviceId: () => ipcRenderer.invoke('device:getDeviceId'),
   getDeviceName: () => ipcRenderer.invoke('device:getDeviceName'),
-  storeDeviceToken: (token: string) => ipcRenderer.invoke('device:storeToken', token),
-  getDeviceToken: () => ipcRenderer.invoke('device:getToken'),
-  clearDeviceToken: () => ipcRenderer.invoke('device:clearToken'),
+  getDeviceTokens: () => ipcRenderer.invoke('device:getTokens'),
+  clearDeviceTokens: () => ipcRenderer.invoke('device:clearTokens'),
+
+  // Device flow (OAuth-style pairing)
+  deviceFlow: {
+    start: () => ipcRenderer.invoke('deviceFlow:start'),
+    poll: (deviceCode: string, interval: number) =>
+      ipcRenderer.invoke('deviceFlow:poll', deviceCode, interval),
+    stop: () => ipcRenderer.invoke('deviceFlow:stop'),
+  },
 
   // Auth operations (run in main process)
   auth: {
-    verifyDeviceToken: (token: string, deviceId: string) =>
-      ipcRenderer.invoke('auth:verifyDeviceToken', token, deviceId),
-    verifyPairingCode: (code: string, deviceId: string, deviceName: string) =>
-      ipcRenderer.invoke('auth:verifyPairingCode', code, deviceId, deviceName),
+    verifyAccessToken: (accessToken: string) =>
+      ipcRenderer.invoke('auth:verifyAccessToken', accessToken),
+    refreshToken: (refreshToken: string) =>
+      ipcRenderer.invoke('auth:refreshToken', refreshToken),
   },
 
   // Voice commands
@@ -31,6 +38,10 @@ contextBridge.exposeInMainWorld('electron', {
     isActive: () => ipcRenderer.invoke('voice:isActive'),
     getConfig: () => ipcRenderer.invoke('voice:getConfig'),
     updateConfig: (config: any) => ipcRenderer.invoke('voice:updateConfig', config),
+    processAudio: (audioBuffer: ArrayBuffer) =>
+      ipcRenderer.invoke('voice:processAudio', Buffer.from(audioBuffer)),
+    checkWakeWord: (audioBuffer: ArrayBuffer) =>
+      ipcRenderer.invoke('voice:checkWakeWord', Buffer.from(audioBuffer)),
     onEvent: (callback: (event: any) => void) => {
       ipcRenderer.on('voice:event', (_, event) => callback(event));
     },
@@ -41,18 +52,31 @@ contextBridge.exposeInMainWorld('electron', {
 });
 
 // Type definitions for the exposed API
+interface StoredTokens {
+  access_token: string;
+  refresh_token: string;
+  expires_at: number;
+  refresh_expires_at: number;
+  user_id: string;
+  family_id: string;
+}
+
 export interface ElectronAPI {
   getVersion: () => Promise<string>;
   getPath: (name: string) => Promise<string>;
   openExternal: (url: string) => Promise<void>;
   getDeviceId: () => Promise<string>;
   getDeviceName: () => Promise<string>;
-  storeDeviceToken: (token: string) => Promise<void>;
-  getDeviceToken: () => Promise<string | null>;
-  clearDeviceToken: () => Promise<void>;
+  getDeviceTokens: () => Promise<StoredTokens | null>;
+  clearDeviceTokens: () => Promise<void>;
+  deviceFlow: {
+    start: () => Promise<{ success: boolean; data?: any; error?: string }>;
+    poll: (deviceCode: string, interval: number) => Promise<{ success: boolean; data?: any; error?: string }>;
+    stop: () => Promise<{ success: boolean; error?: string }>;
+  };
   auth: {
-    verifyDeviceToken: (token: string, deviceId: string) => Promise<{ success: boolean; result?: any; error?: string }>;
-    verifyPairingCode: (code: string, deviceId: string, deviceName: string) => Promise<{ success: boolean; result?: any; error?: string }>;
+    verifyAccessToken: (accessToken: string) => Promise<{ success: boolean; result?: any; error?: string }>;
+    refreshToken: (refreshToken: string) => Promise<{ success: boolean; data?: any; error?: string }>;
   };
   voice: {
     initialize: (userId: string, familyId: string) => Promise<{ success: boolean; error?: string }>;
@@ -61,6 +85,8 @@ export interface ElectronAPI {
     isActive: () => Promise<boolean>;
     getConfig: () => Promise<any>;
     updateConfig: (config: any) => Promise<{ success: boolean; error?: string }>;
+    processAudio: (audioBuffer: ArrayBuffer) => Promise<{ success: boolean; error?: string }>;
+    checkWakeWord: (audioBuffer: ArrayBuffer) => Promise<{ success: boolean; detected: boolean; error?: string }>;
     onEvent: (callback: (event: any) => void) => void;
     offEvent: (callback: (event: any) => void) => void;
   };

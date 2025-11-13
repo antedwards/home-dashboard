@@ -1,8 +1,6 @@
-import * as recorder from 'node-record-lpcm16';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { WakeWordDetector } from './WakeWordDetector';
 import { SpeechRecognizer } from './SpeechRecognizer';
 import { CommandParser } from './CommandParser';
 import { ActionRegistry } from './actions/ActionRegistry';
@@ -17,11 +15,11 @@ import type {
 
 /**
  * Main voice command service
- * Orchestrates wake word detection, speech recognition, and command execution
+ * Handles speech recognition and command execution
+ * Audio recording is handled by the renderer process using Web APIs
  */
 export class VoiceService {
   private config: VoiceConfig;
-  private wakeWordDetector: WakeWordDetector;
   private speechRecognizer: SpeechRecognizer;
   private commandParser: CommandParser;
   private actionRegistry: ActionRegistry;
@@ -29,6 +27,8 @@ export class VoiceService {
   private eventCallbacks: VoiceEventCallback[] = [];
   private context: ActionContext | null = null;
   private isProcessingCommand: boolean = false;
+  private calendarAction: CalendarAction;
+  private isListening: boolean = false;
 
   constructor(config?: Partial<VoiceConfig>) {
     // Default configuration
@@ -41,51 +41,59 @@ export class VoiceService {
     };
 
     // Initialize components
+    // Use medium model for accurate command transcription
     this.speechRecognizer = new SpeechRecognizer(
-      this.config.whisperModel,
+      'medium',
       this.config.language
     );
     this.commandParser = new CommandParser();
     this.actionRegistry = new ActionRegistry();
     this.audioFeedback = new AudioFeedback();
+    this.calendarAction = new CalendarAction();
 
     // Register default actions
     this.registerDefaultActions();
-
-    // Initialize wake word detector
-    this.wakeWordDetector = new WakeWordDetector(
-      this.config.wakeWord,
-      () => this.onWakeWordDetected(),
-      this.config.vadThreshold
-    );
   }
 
   /**
    * Initialize the voice service
    */
-  async initialize(userId: string, familyId: string): Promise<void> {
+  async initialize(userId: string, familyId: string, accessToken?: string): Promise<void> {
     console.log('🎤 Initializing Voice Service...');
 
     // Set context for action handlers
     this.context = { userId, familyId };
 
-    // Initialize speech recognizer
-    await this.speechRecognizer.initialize();
+    // Set access token for API calls
+    if (accessToken) {
+      this.calendarAction.setAccessToken(accessToken);
+    }
 
-    console.log('✅ Voice Service initialized');
+    // Initialize speech recognizer (non-blocking if it fails)
+    try {
+      await this.speechRecognizer.initialize();
+
+      if (!this.speechRecognizer.isReady()) {
+        console.warn('⚠️  Voice Service initialized without speech recognition');
+      } else {
+        console.log('✅ Voice Service initialized with speech recognition');
+      }
+    } catch (error) {
+      console.warn('⚠️  Voice Service initialized without speech recognition:', error);
+    }
   }
 
   /**
    * Start listening for voice commands
+   * Note: Actual audio capture is handled by the renderer process
    */
   async start(): Promise<void> {
     if (!this.context) {
       throw new Error('Voice service not initialized. Call initialize() first.');
     }
 
-    console.log('🎤 Starting voice command service...');
-    await this.wakeWordDetector.start();
-    console.log(`✅ Voice service active. Say "${this.config.wakeWord}" to begin.`);
+    console.log('🎤 Voice command service ready');
+    this.isListening = true;
   }
 
   /**
@@ -93,32 +101,31 @@ export class VoiceService {
    */
   stop(): void {
     console.log('Stopping voice command service...');
-    this.wakeWordDetector.stop();
+    this.isListening = false;
   }
 
   /**
-   * Handle wake word detection
+   * Process audio data from the renderer
+   * @param audioBuffer - Raw audio data as Buffer (WAV format from Web Audio API)
    */
-  private async onWakeWordDetected(): Promise<void> {
-    if (this.isProcessingCommand) {
-      console.log('Already processing a command, ignoring wake word');
+  async processAudio(audioBuffer: Buffer): Promise<void> {
+    if (!this.isListening || this.isProcessingCommand) {
+      console.log('[VoiceService] Ignoring audio - not listening or already processing');
       return;
     }
 
     this.isProcessingCommand = true;
-    this.emitEvent({ type: 'wake_word_detected' });
+    this.emitEvent({ type: 'listening_started' });
 
     try {
-      // Play listening sound
-      await this.audioFeedback.playListeningStarted();
-      this.emitEvent({ type: 'listening_started' });
+      // Save WAV audio to temporary file
+      const tempFile = path.join(os.tmpdir(), `voice-command-${Date.now()}.wav`);
+      fs.writeFileSync(tempFile, audioBuffer);
+      console.log(`[VoiceService] Saved audio to ${tempFile}, size: ${audioBuffer.length} bytes`);
 
-      // Record command
-      const audioFile = await this.recordCommand();
-
-      // Transcribe
+      // Transcribe with Whisper
       this.emitEvent({ type: 'listening_stopped' });
-      const transcript = await this.speechRecognizer.transcribe(audioFile);
+      const transcript = await this.speechRecognizer.transcribe(tempFile);
       this.emitEvent({ type: 'speech_recognized', transcript });
 
       // Parse command
@@ -138,10 +145,14 @@ export class VoiceService {
         }
       }
 
-      // Cleanup
-      fs.unlinkSync(audioFile);
+      // Cleanup temp file
+      try {
+        fs.unlinkSync(tempFile);
+      } catch (err) {
+        console.warn('[VoiceService] Failed to cleanup temp file:', err);
+      }
     } catch (error: any) {
-      console.error('Error processing voice command:', error);
+      console.error('[VoiceService] Error processing audio:', error);
       this.emitEvent({ type: 'error', error: error.message });
       await this.audioFeedback.playError();
     } finally {
@@ -149,42 +160,6 @@ export class VoiceService {
     }
   }
 
-  /**
-   * Record a voice command after wake word
-   */
-  private async recordCommand(): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const tempFile = path.join(os.tmpdir(), `voice-command-${Date.now()}.wav`);
-      const fileStream = fs.createWriteStream(tempFile);
-
-      const recording = recorder.record({
-        sampleRate: 16000,
-        channels: 1,
-        audioType: 'wav',
-        threshold: 0.5,
-        silence: '2.0', // Stop after 2 seconds of silence
-      });
-
-      const audioStream = recording.stream();
-      audioStream.pipe(fileStream);
-
-      // Stop after timeout
-      const timeout = setTimeout(() => {
-        recording.stop();
-      }, this.config.recordingTimeout * 1000);
-
-      fileStream.on('finish', () => {
-        clearTimeout(timeout);
-        resolve(tempFile);
-      });
-
-      audioStream.on('error', (error: Error) => {
-        clearTimeout(timeout);
-        recording.stop();
-        reject(error);
-      });
-    });
-  }
 
   /**
    * Register an event callback
@@ -221,7 +196,7 @@ export class VoiceService {
    * Register default action handlers
    */
   private registerDefaultActions(): void {
-    this.actionRegistry.register(new CalendarAction());
+    this.actionRegistry.register(this.calendarAction);
   }
 
   /**
@@ -249,7 +224,7 @@ export class VoiceService {
    * Check if service is active
    */
   isActive(): boolean {
-    return this.wakeWordDetector.isActive();
+    return this.isListening;
   }
 
   /**

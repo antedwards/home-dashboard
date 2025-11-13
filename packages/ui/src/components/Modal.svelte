@@ -61,7 +61,6 @@
     background: white;
     border-radius: 12px;
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-    max-width: 90vw;
     max-height: 90vh;
     overflow: hidden;
     animation: slideUp 0.3s ease-out;

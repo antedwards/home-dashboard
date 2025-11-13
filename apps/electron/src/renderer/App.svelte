@@ -37,46 +37,64 @@
     loading = true;
 
     try {
-      // Get stored token
-      const token = await window.electron.getDeviceToken();
+      // Get stored tokens
+      const tokens = await window.electron.getDeviceTokens();
 
-      if (!token) {
+      if (!tokens) {
         isAuthenticated = false;
         loading = false;
         return;
       }
 
-      // Verify token with backend via IPC (runs in main process)
-      const deviceId = await window.electron.getDeviceId();
-      const authResult = await window.electron.auth.verifyDeviceToken(token, deviceId);
+      // Check if access token is expired or about to expire
+      const now = Date.now();
+      const isExpired = tokens.expires_at <= now;
+      const needsRefresh = tokens.expires_at - now < 5 * 24 * 60 * 60 * 1000; // 5 days
 
-      if (authResult.success && authResult.result?.valid && authResult.result?.userId) {
-        isAuthenticated = true;
-        userId = authResult.result.userId;
+      // If expired, try to refresh
+      if (isExpired) {
+        console.log('[Auth] Access token expired, refreshing...');
+        const refreshResult = await window.electron.auth.refreshToken(tokens.refresh_token);
 
-        // Get user's family
-        const { data: familyMember } = await supabase
-          .from('family_members')
-          .select('family_id')
-          .eq('user_id', authResult.result.userId)
-          .single();
-
-        if (familyMember) {
-          // Initialize calendar store
-          await calendarStore.initialize(authResult.result.userId, familyMember.family_id);
-
-          // Initialize voice commands
-          await initializeVoice(authResult.result.userId, familyMember.family_id);
+        if (!refreshResult.success) {
+          // Refresh failed, clear tokens and show pairing screen
+          console.error('[Auth] Token refresh failed:', refreshResult.error);
+          isAuthenticated = false;
+          await window.electron.clearDeviceTokens();
+          loading = false;
+          return;
         }
 
-        // TODO: If token needs refresh, show a notification
-        if (authResult.result.needsRefresh) {
-          console.log('Token will expire soon, please extend it in the web app');
+        // Tokens refreshed successfully, reinitialize with new token
+        console.log('[Auth] Token refreshed successfully');
+        const newTokens = await window.electron.getDeviceTokens();
+        if (newTokens && newTokens.family_id) {
+          await calendarStore.initialize(newTokens.user_id, newTokens.family_id, newTokens.access_token);
         }
+      } else if (needsRefresh) {
+        // Token will expire soon, refresh proactively
+        console.log('[Auth] Token expiring soon, refreshing proactively...');
+        window.electron.auth.refreshToken(tokens.refresh_token).catch((err) => {
+          console.error('[Auth] Proactive refresh failed:', err);
+        });
+      }
+
+      // Token exists and not expired - assume valid (API will reject if invalid)
+      // For a wall-mounted screen, we trust the locally stored token
+      isAuthenticated = true;
+      userId = tokens.user_id;
+
+      // Initialize calendar store with family_id from token
+      if (tokens.family_id) {
+        // Initialize calendar store (this sets the access token internally)
+        await calendarStore.initialize(tokens.user_id, tokens.family_id, tokens.access_token);
+
+        // Initialize voice commands
+        await initializeVoice(tokens.user_id, tokens.family_id);
       } else {
-        // Token invalid or expired
+        console.error('[Auth] Token missing family_id');
         isAuthenticated = false;
-        await window.electron.clearDeviceToken();
+        await window.electron.clearDeviceTokens();
       }
     } catch (error) {
       console.error('Authentication error:', error);
@@ -153,45 +171,28 @@
   }
 
   async function initializeVoice(userId: string, familyId: string) {
-    try {
-      // Initialize voice service
-      const result = await window.electron.voice.initialize(userId, familyId);
-
-      if (result.success) {
-        // Set up event listener
-        window.electron.voice.onEvent(handleVoiceEvent);
-
-        // Start listening
-        const startResult = await window.electron.voice.start();
-        if (startResult.success) {
-          voiceActive = true;
-          voiceStatus = 'Say "Hey Sausage" to give a command';
-          console.log('✅ Voice commands active');
-        }
-      }
-    } catch (error) {
-      console.error('Failed to initialize voice commands:', error);
-      voiceStatus = 'Voice commands unavailable';
-    }
+    // TODO: Voice commands temporarily disabled - focusing on calendar functionality
+    voiceActive = false;
+    voiceStatus = 'Voice commands coming soon';
+    console.log('⚠️  Voice commands disabled for now');
   }
 
   function handleVoiceEvent(event: any) {
     console.log('Voice event:', event);
 
     switch (event.type) {
-      case 'wake_word_detected':
-        voiceStatus = '🎤 Listening...';
-        voiceTranscript = '';
-        break;
       case 'listening_started':
-        voiceStatus = '🎤 Speak now...';
+        voiceStatus = '🎤 Processing audio...';
         break;
       case 'listening_stopped':
-        voiceStatus = '⏳ Processing...';
+        voiceStatus = '⏳ Transcribing...';
         break;
       case 'speech_recognized':
         voiceTranscript = event.transcript;
         voiceStatus = `📝 "${event.transcript}"`;
+        break;
+      case 'command_parsed':
+        voiceStatus = `🔄 Executing command...`;
         break;
       case 'command_executed':
         if (event.result.success) {
@@ -203,33 +204,23 @@
         }
         // Clear status after 5 seconds
         setTimeout(() => {
-          voiceStatus = 'Say "Hey Sausage" to give a command';
+          voiceStatus = 'Click microphone to give a voice command';
           voiceTranscript = '';
         }, 5000);
         break;
       case 'error':
         voiceStatus = `❌ Error: ${event.error}`;
         setTimeout(() => {
-          voiceStatus = 'Say "Hey Sausage" to give a command';
+          voiceStatus = 'Click microphone to give a voice command';
         }, 3000);
         break;
     }
   }
 
   async function toggleVoice() {
-    try {
-      if (voiceActive) {
-        await window.electron.voice.stop();
-        voiceActive = false;
-        voiceStatus = 'Voice commands off';
-      } else {
-        await window.electron.voice.start();
-        voiceActive = true;
-        voiceStatus = 'Say "Hey Sausage" to give a command';
-      }
-    } catch (error) {
-      console.error('Failed to toggle voice:', error);
-    }
+    // Voice is always listening for "Hey Sausage" - this button is just for status
+    // Could be used to pause/resume listening in the future
+    console.log('Voice is always active - just say "Hey Sausage"');
   }
 </script>
 
@@ -282,14 +273,13 @@
           </button>
         </div>
 
-        <button
-          class="voice-toggle"
+        <div
+          class="voice-status"
           class:active={voiceActive}
-          onclick={toggleVoice}
-          title={voiceStatus || 'Toggle voice commands'}
+          title={voiceStatus || 'Voice commands status'}
         >
           {voiceActive ? '🎤' : '🔇'}
-        </button>
+        </div>
 
         <button class="btn-primary" onclick={() => { initialEventDate = new Date(); selectedEvent = null; showEventModal = true; }}>
           + New Event
@@ -513,7 +503,7 @@
     border-color: #2563eb;
   }
 
-  .voice-toggle {
+  .voice-status {
     width: 40px;
     height: 40px;
     display: flex;
@@ -523,16 +513,10 @@
     border: 2px solid #e0e0e0;
     border-radius: 50%;
     font-size: 1.25rem;
-    cursor: pointer;
     transition: all 0.2s;
   }
 
-  .voice-toggle:hover {
-    background: #f5f5f5;
-    border-color: #d0d0d0;
-  }
-
-  .voice-toggle.active {
+  .voice-status.active {
     background: #10b981;
     border-color: #10b981;
     animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;

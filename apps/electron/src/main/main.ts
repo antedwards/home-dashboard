@@ -1,29 +1,20 @@
 import { app, BrowserWindow, ipcMain, safeStorage, shell } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { promises as fs } from 'fs';
+import { promises as fsPromises } from 'fs';
+import fs from 'fs';
 import os from 'os';
 import { randomBytes } from 'crypto';
 import { VoiceService } from './voice';
 import type { VoiceEvent } from './voice';
-import { createSupabaseClient, verifyDeviceToken, verifyPairingCodeAndCreateToken } from '@home-dashboard/database';
+import { DeviceFlowClient } from './device-flow-client';
+import { createSupabaseClient, verifyAccessToken } from '@home-dashboard/database';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 let mainWindow: BrowserWindow | null = null;
 let voiceService: VoiceService | null = null;
-
-// Protocol handler for deep linking
-const PROTOCOL = 'homedashboard';
-
-// Make this app the default handler for homedashboard:// links
-if (process.defaultApp) {
-  if (process.argv.length >= 2) {
-    app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [path.resolve(process.argv[1])]);
-  }
-} else {
-  app.setAsDefaultProtocolClient(PROTOCOL);
-}
+let deviceFlowClient: DeviceFlowClient | null = null;
 
 // Create Supabase client for main process
 const supabase = createSupabaseClient(
@@ -31,9 +22,9 @@ const supabase = createSupabaseClient(
   process.env.VITE_SUPABASE_ANON_KEY!
 );
 
-//Token storage path
+// Token storage path
 const getTokenPath = () => {
-  return path.join(app.getPath('userData'), 'device-token');
+  return path.join(app.getPath('userData'), 'device-tokens.json');
 };
 
 // Device ID path
@@ -48,12 +39,12 @@ async function getDeviceId(): Promise<string> {
   const deviceIdPath = getDeviceIdPath();
 
   try {
-    const deviceId = await fs.readFile(deviceIdPath, 'utf-8');
+    const deviceId = await fsPromises.readFile(deviceIdPath, 'utf-8');
     return deviceId;
   } catch {
     // Generate new device ID
     const deviceId = randomBytes(16).toString('hex');
-    await fs.writeFile(deviceIdPath, deviceId, 'utf-8');
+    await fsPromises.writeFile(deviceIdPath, deviceId, 'utf-8');
     return deviceId;
   }
 }
@@ -65,54 +56,76 @@ function getDeviceName(): string {
   return `${os.hostname()} (Electron)`;
 }
 
+interface StoredTokens {
+  access_token: string;
+  refresh_token: string;
+  expires_at: number;
+  refresh_expires_at: number;
+  user_id: string;
+  family_id: string;
+}
+
 /**
- * Store device token securely
+ * Store device tokens securely
  */
-async function storeDeviceToken(token: string): Promise<void> {
+async function storeDeviceTokens(tokens: StoredTokens): Promise<void> {
   const tokenPath = getTokenPath();
+
+  console.log('[storeDeviceTokens] Storing tokens for user:', tokens.user_id);
+
+  const json = JSON.stringify(tokens);
 
   // Use Electron's safeStorage for encryption if available
   if (safeStorage.isEncryptionAvailable()) {
-    const encrypted = safeStorage.encryptString(token);
-    await fs.writeFile(tokenPath, encrypted);
+    const encrypted = safeStorage.encryptString(json);
+    await fsPromises.writeFile(tokenPath, encrypted);
+    console.log('[storeDeviceTokens] Tokens stored with encryption');
   } else {
     // Fallback to plain text (not recommended for production)
-    console.warn('Encryption not available, storing token in plain text');
-    await fs.writeFile(tokenPath, token, 'utf-8');
+    console.warn('[storeDeviceTokens] Encryption not available, storing tokens in plain text');
+    await fsPromises.writeFile(tokenPath, json, 'utf-8');
   }
 }
 
 /**
- * Retrieve device token
+ * Retrieve device tokens
  */
-async function getDeviceToken(): Promise<string | null> {
+async function getDeviceTokens(): Promise<StoredTokens | null> {
   const tokenPath = getTokenPath();
 
   try {
-    const data = await fs.readFile(tokenPath);
+    const data = await fsPromises.readFile(tokenPath);
 
+    let json: string;
     if (safeStorage.isEncryptionAvailable()) {
-      return safeStorage.decryptString(data);
+      json = safeStorage.decryptString(data);
     } else {
-      return data.toString('utf-8');
+      json = data.toString('utf-8');
     }
-  } catch {
+
+    const tokens: StoredTokens = JSON.parse(json);
+    console.log('[getDeviceTokens] Retrieved tokens for user:', tokens.user_id);
+    return tokens;
+  } catch (error) {
+    console.log('[getDeviceTokens] No tokens found');
     return null;
   }
 }
 
 /**
- * Clear device token (for logout/unpair)
+ * Clear device tokens (for logout/unpair)
  */
-async function clearDeviceToken(): Promise<void> {
+async function clearDeviceTokens(): Promise<void> {
   const tokenPath = getTokenPath();
 
   try {
-    await fs.unlink(tokenPath);
+    await fsPromises.unlink(tokenPath);
+    console.log('[clearDeviceTokens] Tokens cleared');
   } catch {
     // File doesn't exist, that's fine
   }
 }
+
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -128,6 +141,7 @@ function createWindow() {
     backgroundColor: '#ffffff',
   });
 
+  // Load Electron renderer (like collector-server)
   // In development, load from Vite dev server
   if (process.env.VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
@@ -137,75 +151,41 @@ function createWindow() {
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   }
 
+  // Forward renderer console messages to main process terminal
+  mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
+    const levelNames = ['DEBUG', 'INFO', 'WARN', 'ERROR'];
+    const prefix = `[Renderer ${levelNames[level]}]`;
+
+    if (level === 3) { // Error
+      console.error(`${prefix}`, message, `(${sourceId}:${line})`);
+    } else if (level === 2) { // Warning
+      console.warn(`${prefix}`, message);
+    } else {
+      console.log(`${prefix}`, message);
+    }
+  });
+
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
 }
 
-// Handle deep link URLs
-async function handleDeepLink(url: string) {
-  console.log('Deep link received:', url);
-
-  // Parse the URL: homedashboard://paired?token=xxx
-  const urlObj = new URL(url);
-
-  if (urlObj.protocol === `${PROTOCOL}:` && urlObj.hostname === 'paired') {
-    const token = urlObj.searchParams.get('token');
-
-    if (token) {
-      try {
-        // Store the token
-        await storeDeviceToken(token);
-
-        // Focus or create window
-        if (mainWindow) {
-          if (mainWindow.isMinimized()) mainWindow.restore();
-          mainWindow.focus();
-          mainWindow.reload();
-        } else {
-          createWindow();
-        }
-      } catch (error) {
-        console.error('Failed to handle deep link:', error);
-      }
-    }
-  }
-}
-
-// Handle deep link on macOS
-app.on('open-url', (event, url) => {
-  event.preventDefault();
-  handleDeepLink(url);
-});
-
-// Prevent multiple instances and handle deep links on Windows/Linux
+// Prevent multiple instances
 const gotTheLock = app.requestSingleInstanceLock();
 
 if (!gotTheLock) {
   app.quit();
 } else {
-  app.on('second-instance', (event, commandLine, workingDirectory) => {
-    // Someone tried to run a second instance, focus our window and handle the URL
+  app.on('second-instance', () => {
+    // Someone tried to run a second instance, focus our window
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
-    }
-
-    // Check if there's a deep link in the command line
-    const url = commandLine.find((arg) => arg.startsWith(`${PROTOCOL}://`));
-    if (url) {
-      handleDeepLink(url);
     }
   });
 
   app.whenReady().then(() => {
     createWindow();
-
-    // Check if opened with a deep link (Windows/Linux)
-    const url = process.argv.find((arg) => arg.startsWith(`${PROTOCOL}://`));
-    if (url) {
-      handleDeepLink(url);
-    }
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) {
@@ -222,6 +202,12 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', async () => {
+  // Cleanup device flow client
+  if (deviceFlowClient) {
+    deviceFlowClient.stopPolling();
+    deviceFlowClient = null;
+  }
+
   // Cleanup voice service
   if (voiceService) {
     await voiceService.cleanup();
@@ -251,39 +237,114 @@ ipcMain.handle('device:getDeviceName', () => {
   return getDeviceName();
 });
 
-ipcMain.handle('device:storeToken', async (_, token: string) => {
-  await storeDeviceToken(token);
+ipcMain.handle('device:getTokens', async () => {
+  return await getDeviceTokens();
 });
 
-ipcMain.handle('device:getToken', async () => {
-  return await getDeviceToken();
+ipcMain.handle('device:clearTokens', async () => {
+  await clearDeviceTokens();
 });
 
-ipcMain.handle('device:clearToken', async () => {
-  await clearDeviceToken();
-});
-
-// Auth handlers (run in main process to use crypto)
-ipcMain.handle('auth:verifyDeviceToken', async (_, token: string, deviceId: string) => {
+// Device flow handlers
+ipcMain.handle('deviceFlow:start', async () => {
   try {
-    const result = await verifyDeviceToken(supabase, token, deviceId);
-    return { success: true, result };
+    const deviceId = await getDeviceId();
+    const deviceName = getDeviceName();
+    // Use web app URL for API calls (not the Electron renderer URL)
+    const baseUrl = process.env.VITE_WEB_APP_URL || 'http://localhost:5173';
+
+    // Initialize device flow client
+    deviceFlowClient = new DeviceFlowClient(baseUrl, deviceId, deviceName);
+
+    // Request device code
+    const deviceCodeResponse = await deviceFlowClient.startFlow();
+
+    console.log('[Main] Device flow started:', deviceCodeResponse.user_code);
+
+    return { success: true, data: deviceCodeResponse };
+  } catch (error: any) {
+    console.error('[Main] Failed to start device flow:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('deviceFlow:poll', async (_, deviceCode: string, interval: number) => {
+  try {
+    if (!deviceFlowClient) {
+      throw new Error('Device flow not started');
+    }
+
+    console.log('[Main] Starting device flow polling...');
+
+    // Poll for authorization
+    const tokenResponse = await deviceFlowClient.pollForAuthorization(deviceCode, interval);
+
+    // Convert to StoredTokens and save
+    const storedTokens = deviceFlowClient.toStoredTokens(tokenResponse);
+    await storeDeviceTokens(storedTokens);
+
+    console.log('[Main] Device authorized and tokens stored');
+
+    return { success: true, data: tokenResponse };
+  } catch (error: any) {
+    console.error('[Main] Device flow polling failed:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('deviceFlow:stop', async () => {
+  try {
+    if (deviceFlowClient) {
+      deviceFlowClient.stopPolling();
+    }
+    return { success: true };
   } catch (error: any) {
     return { success: false, error: error.message };
   }
 });
 
-ipcMain.handle('auth:verifyPairingCode', async (_, code: string, deviceId: string, deviceName: string) => {
+// Auth handlers (run in main process to use crypto)
+ipcMain.handle('auth:verifyAccessToken', async (_, accessToken: string) => {
   try {
-    const result = await verifyPairingCodeAndCreateToken(supabase, code, deviceId, deviceName);
+    console.log('[Main] Verifying access token...');
+    const deviceId = await getDeviceId();
+    const result = await verifyAccessToken(supabase, accessToken, deviceId);
+    console.log('[Main] Token verification result:', result ? 'valid' : 'invalid');
     return { success: true, result };
   } catch (error: any) {
+    console.error('[Main] Failed to verify access token:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('auth:refreshToken', async (_, refreshToken: string) => {
+  try {
+    if (!deviceFlowClient) {
+      const deviceId = await getDeviceId();
+      const deviceName = getDeviceName();
+      // Use web app URL for API calls (not the Electron renderer URL)
+      const baseUrl = process.env.VITE_WEB_APP_URL || 'http://localhost:5173';
+      deviceFlowClient = new DeviceFlowClient(baseUrl, deviceId, deviceName);
+    }
+
+    console.log('[Main] Refreshing access token...');
+    const tokenResponse = await deviceFlowClient.refreshToken(refreshToken);
+
+    // Update stored tokens
+    const storedTokens = deviceFlowClient.toStoredTokens(tokenResponse);
+    await storeDeviceTokens(storedTokens);
+
+    console.log('[Main] Token refreshed successfully');
+
+    return { success: true, data: tokenResponse };
+  } catch (error: any) {
+    console.error('[Main] Failed to refresh token:', error);
     return { success: false, error: error.message };
   }
 });
 
 // Voice command handlers
-ipcMain.handle('voice:initialize', async (_, userId: string, familyId: string) => {
+ipcMain.handle('voice:initialize', async (_, userId: string, familyId: string, accessToken?: string) => {
   try {
     if (!voiceService) {
       voiceService = new VoiceService({
@@ -300,7 +361,7 @@ ipcMain.handle('voice:initialize', async (_, userId: string, familyId: string) =
       });
     }
 
-    await voiceService.initialize(userId, familyId);
+    await voiceService.initialize(userId, familyId, accessToken);
     return { success: true };
   } catch (error: any) {
     console.error('Failed to initialize voice service:', error);
@@ -350,5 +411,59 @@ ipcMain.handle('voice:updateConfig', async (_, config: any) => {
     return { success: true };
   } catch (error: any) {
     return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('voice:processAudio', async (_, audioBuffer: Buffer) => {
+  try {
+    if (!voiceService) {
+      throw new Error('Voice service not initialized');
+    }
+
+    console.log('[Main] Processing audio buffer, size:', audioBuffer.length);
+    await voiceService.processAudio(audioBuffer);
+
+    return { success: true };
+  } catch (error: any) {
+    console.error('[Main] Failed to process audio:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('voice:checkWakeWord', async (_, audioBuffer: Buffer) => {
+  try {
+    if (!voiceService) {
+      return { success: true, detected: false };
+    }
+
+    // Use tiny Whisper model for fast wake word detection
+    const { SpeechRecognizer } = await import('./voice/SpeechRecognizer');
+    const recognizer = new SpeechRecognizer('tiny', 'en');
+    await recognizer.initialize();
+
+    // Save to temp file
+    const tempFile = path.join(os.tmpdir(), `wake-word-${Date.now()}.wav`);
+    fs.writeFileSync(tempFile, audioBuffer);
+
+    // Transcribe
+    const transcript = await recognizer.transcribe(tempFile);
+
+    // Check for wake word
+    const normalized = transcript.toLowerCase().trim();
+    const detected = /\b(hey|hay|hi|a)\s+sausage\b/i.test(normalized) || /\bsausage\b/i.test(normalized);
+
+    console.log(`[Main] Wake word check: "${transcript}" -> ${detected ? 'DETECTED' : 'not detected'}`);
+
+    // Cleanup
+    try {
+      fs.unlinkSync(tempFile);
+    } catch (err) {
+      // Ignore cleanup errors
+    }
+
+    return { success: true, detected };
+  } catch (error: any) {
+    console.error('[Main] Failed to check wake word:', error);
+    return { success: false, detected: false, error: error.message };
   }
 });

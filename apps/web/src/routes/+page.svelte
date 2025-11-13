@@ -9,47 +9,24 @@
     type CalendarEvent,
   } from '@home-dashboard/ui';
   import { calendarStore } from '$lib/stores/calendar.svelte';
-  import { supabase } from '$lib/supabase';
+  import type { PageData } from './$types';
+
+  interface Props {
+    data: PageData;
+  }
+
+  let { data }: Props = $props();
 
   let showEventModal = $state(false);
   let selectedEvent = $state<CalendarEvent | null>(null);
   let initialEventDate = $state<Date | undefined>(undefined);
-  let initError = $state<string | null>(null);
+  let initError = $state<string | null>(data.error);
 
   onMount(async () => {
     try {
-      // Get current user and their family
-      const {
-        data: { user },
-        error: authError,
-      } = await supabase.auth.getUser();
-
-      if (authError) {
-        console.error('Auth error:', authError);
-        initError = 'Authentication error. Please log in.';
-        return;
-      }
-
-      if (user) {
-        // Get user's family
-        const { data: familyMember, error: familyError } = await supabase
-          .from('family_members')
-          .select('family_id')
-          .eq('user_id', user.id)
-          .single();
-
-        if (familyError) {
-          console.error('Family lookup error:', familyError);
-          initError = 'Could not find your family. Please contact support.';
-          return;
-        }
-
-        if (familyMember) {
-          // Initialize calendar store
-          await calendarStore.initialize(user.id, familyMember.family_id);
-        }
-      } else {
-        initError = 'Not authenticated. Please log in.';
+      // Initialize calendar store with server-provided data
+      if (data.userId && data.familyId) {
+        await calendarStore.initialize(data.userId, data.familyId);
       }
     } catch (error) {
       console.error('Initialization error:', error);
@@ -227,9 +204,12 @@
   bind:open={showEventModal}
   event={selectedEvent}
   initialDate={initialEventDate}
+  familyMembers={calendarStore.familyMembers}
+  categories={calendarStore.categories}
   onClose={() => { showEventModal = false; selectedEvent = null; }}
   onSave={handleSaveEvent}
   onDelete={handleDeleteEvent}
+  onCategoryCreate={async (name, color) => await calendarStore.createCategory(name, color)}
 />
 
 <style>

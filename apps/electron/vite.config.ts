@@ -24,7 +24,6 @@ export default defineConfig(({ mode }) => {
                 external: [
                   'electron',
                   'better-sqlite3',
-                  'node-record-lpcm16',
                   'whisper-node',
                 ],
               },
@@ -48,7 +47,7 @@ export default defineConfig(({ mode }) => {
     },
   },
   server: {
-    port: 5173,
+    port: 5174,
   },
   build: {
     outDir: 'dist',

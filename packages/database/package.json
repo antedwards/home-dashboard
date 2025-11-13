@@ -8,7 +8,9 @@
     ".": "./src/index.ts",
     "./browser": "./src/browser.ts",
     "./types": "./src/types.ts",
-    "./client": "./src/client.ts"
+    "./client": "./src/client.ts",
+    "./db/client": "./src/db/client.ts",
+    "./db/schema": "./src/db/schema.ts"
   },
   "scripts": {
     "lint": "eslint .",
@@ -17,9 +19,12 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.47.10",
+    "drizzle-orm": "^0.44.7",
+    "postgres": "^3.4.7",
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "drizzle-kit": "^0.31.6",
     "typescript": "^5.7.2"
   }
 }

@@ -30,10 +30,15 @@
       const { data: { user }, error: authError } = await supabase.auth.getUser();
 
       if (authError || !user) {
-        error = 'Please log in to pair your device.';
-        loading = false;
+        // Redirect to login with return URL
+        const returnUrl = encodeURIComponent($page.url.pathname + $page.url.search);
+        window.location.href = `/auth/login?returnTo=${returnUrl}`;
         return;
       }
+
+      console.log('[Pairing] User authenticated:', user.id);
+      console.log('[Pairing] Device ID:', deviceId);
+      console.log('[Pairing] Device Name:', deviceName);
 
       status = 'Generating device token...';
 
@@ -44,14 +49,35 @@
         deviceName || 'Electron Device'
       );
 
+      console.log('[Pairing] Token created successfully, length:', token.length);
+
       status = 'Pairing complete! Redirecting...';
 
       // Redirect back to Electron app with token
-      setTimeout(() => {
-        window.location.href = `homedashboard://paired?token=${encodeURIComponent(token)}`;
-      }, 1000);
+      // Use localhost callback in development, protocol handler in production
+      const isDev = import.meta.env.DEV;
+      const redirectUrl = isDev
+        ? `http://localhost:34521/paired?token=${encodeURIComponent(token)}`
+        : `homedashboard-family://paired?token=${encodeURIComponent(token)}`;
+
+      console.log('[Pairing] About to redirect to:', redirectUrl);
+
+      // TEMPORARY: Auto-copy URL for debugging
+      try {
+        await navigator.clipboard.writeText(redirectUrl);
+        console.log('[Pairing] ✅ URL copied to clipboard! Paste it in your browser address bar.');
+        status = 'URL copied to clipboard! Paste it in your browser to complete pairing.';
+      } catch (e) {
+        console.log('[Pairing] TEMPORARY: Redirect disabled for debugging');
+        status = 'Copy this URL and paste in browser: ' + redirectUrl;
+      }
+
+      // setTimeout(() => {
+      //   window.location.href = redirectUrl;
+      // }, 1000);
     } catch (err: any) {
-      console.error('Pairing error:', err);
+      console.error('[Pairing] Error during pairing:', err);
+      console.error('[Pairing] Error stack:', err.stack);
       error = err.message || 'Failed to pair device. Please try again.';
       loading = false;
     }

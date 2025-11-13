@@ -12,14 +12,16 @@
     "lint": "eslint .",
     "type-check": "tsc --noEmit",
     "electron:dev": "vite",
-    "electron:build": "vite build && electron-builder"
+    "electron:build": "vite build && electron-builder",
+    "postinstall": "bash scripts/compile-whisper.sh && npm run download:models",
+    "compile:whisper": "bash scripts/compile-whisper.sh",
+    "download:models": "npx whisper-node download"
   },
   "dependencies": {
     "@home-dashboard/database": "workspace:*",
     "@home-dashboard/sync": "workspace:*",
     "@home-dashboard/ui": "workspace:*",
     "better-sqlite3": "^11.7.0",
-    "node-record-lpcm16": "^1.0.1",
     "whisper-node": "^1.1.1"
   },
   "devDependencies": {
@@ -36,22 +38,45 @@
   "build": {
     "appId": "com.homedashboard.app",
     "productName": "Home Dashboard",
+    "protocols": {
+      "name": "Home Dashboard",
+      "schemes": [
+        "homedashboard-family"
+      ]
+    },
     "directories": {
       "output": "release"
     },
     "files": [
       "dist/**/*",
-      "dist-electron/**/*"
+      "dist-electron/**/*",
+      "resources/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "${env.HOME}/.cache/whisper-node",
+        "to": "whisper-models",
+        "filter": ["**/*"]
+      }
     ],
     "mac": {
       "category": "public.app-category.productivity",
-      "target": ["dmg"]
+      "target": [
+        "dmg"
+      ],
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Home Dashboard needs access to your microphone to enable voice commands with the 'Hey Sausage' wake word."
+      }
     },
     "win": {
-      "target": ["nsis"]
+      "target": [
+        "nsis"
+      ]
     },
     "linux": {
-      "target": ["AppImage"],
+      "target": [
+        "AppImage"
+      ],
       "category": "Utility"
     }
   }

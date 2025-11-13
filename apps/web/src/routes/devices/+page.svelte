@@ -1,25 +1,19 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import {
-    createSupabaseClient,
-    createDevicePairingCode,
-    getDeviceTokens,
-    revokeDeviceToken,
-    extendDeviceToken,
-    type DevicePairingCode,
-    type DeviceToken,
-  } from '@home-dashboard/database';
+  import { goto } from '$app/navigation';
 
-  let pairingCode = $state<DevicePairingCode | null>(null);
+  interface DeviceToken {
+    id: string;
+    deviceName: string | null;
+    deviceType: string | null;
+    createdAt: string;
+    lastUsedAt: string | null;
+    expiresAt: string;
+  }
+
   let devices = $state<DeviceToken[]>([]);
   let loading = $state(false);
   let error = $state('');
-  let countdown = $state(0);
-
-  const supabase = createSupabaseClient(
-    import.meta.env.VITE_SUPABASE_URL,
-    import.meta.env.VITE_SUPABASE_ANON_KEY
-  );
 
   onMount(async () => {
     await loadDevices();
@@ -27,36 +21,17 @@
 
   async function loadDevices() {
     try {
-      devices = await getDeviceTokens(supabase);
+      const response = await fetch('/api/devices');
+      if (!response.ok) throw new Error('Failed to load devices');
+      devices = await response.json();
     } catch (err: any) {
       error = err.message || 'Failed to load devices';
     }
   }
 
-  async function generateCode() {
-    loading = true;
-    error = '';
-
-    try {
-      pairingCode = await createDevicePairingCode(supabase, 10); // 10 minutes
-
-      // Start countdown
-      const expiresAt = new Date(pairingCode.expires_at).getTime();
-      const interval = setInterval(() => {
-        const now = Date.now();
-        const remaining = Math.max(0, Math.floor((expiresAt - now) / 1000));
-        countdown = remaining;
-
-        if (remaining === 0) {
-          clearInterval(interval);
-          pairingCode = null;
-        }
-      }, 1000);
-    } catch (err: any) {
-      error = err.message || 'Failed to generate pairing code';
-    } finally {
-      loading = false;
-    }
+  async function handlePairDevice() {
+    // Navigate to pairing page which will show the code
+    goto('/devices/pair');
   }
 
   async function handleRevoke(tokenId: string) {
@@ -65,7 +40,8 @@
     }
 
     try {
-      await revokeDeviceToken(supabase, tokenId);
+      const response = await fetch(`/api/devices/${tokenId}`, { method: 'DELETE' });
+      if (!response.ok) throw new Error('Failed to revoke device');
       await loadDevices();
     } catch (err: any) {
       error = err.message || 'Failed to revoke device';
@@ -74,17 +50,16 @@
 
   async function handleExtend(tokenId: string) {
     try {
-      await extendDeviceToken(supabase, tokenId, 90);
+      const response = await fetch(`/api/devices/${tokenId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ extend_days: 90 }),
+      });
+      if (!response.ok) throw new Error('Failed to extend device token');
       await loadDevices();
     } catch (err: any) {
       error = err.message || 'Failed to extend device token';
     }
-  }
-
-  function formatTimeRemaining(seconds: number): string {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
   }
 
   function formatDate(dateStr: string): string {
@@ -124,29 +99,12 @@
   <div class="card">
     <h3>Pair a New Device</h3>
     <p class="subtitle">
-      Generate a code to connect your Electron desktop app
+      Connect your Electron desktop app to the family dashboard
     </p>
 
-    {#if !pairingCode}
-      <button class="btn-primary" onclick={generateCode} disabled={loading}>
-        {loading ? 'Generating...' : 'Generate Pairing Code'}
-      </button>
-    {:else}
-      <div class="pairing-code-display">
-        <div class="code-label">Enter this code in your Electron app:</div>
-        <div class="code-box">
-          {pairingCode.code}
-        </div>
-        <div class="code-timer">
-          Expires in: {formatTimeRemaining(countdown)}
-        </div>
-        <p class="code-instructions">
-          1. Open the Home Dashboard app on your desktop<br />
-          2. Click "Pair Device"<br />
-          3. Enter the code above
-        </p>
-      </div>
-    {/if}
+    <button class="btn-primary" onclick={handlePairDevice}>
+      Pair New Device
+    </button>
   </div>
 
   <!-- Connected Devices -->
@@ -158,7 +116,7 @@
       <div class="empty-state">
         <p>No devices connected</p>
         <p class="empty-subtitle">
-          Generate a pairing code above to connect your first device
+          Click "Pair New Device" above to connect your first device
         </p>
       </div>
     {:else}
@@ -166,27 +124,27 @@
         {#each devices as device (device.id)}
           <div class="device-item">
             <div class="device-icon">
-              {#if device.device_type === 'electron'}
+              {#if device.deviceType === 'electron'}
                 💻
-              {:else if device.device_type === 'ios'}
+              {:else if device.deviceType === 'ios'}
                 📱
-              {:else if device.device_type === 'android'}
+              {:else if device.deviceType === 'android'}
                 🤖
               {:else}
                 🖥️
               {/if}
             </div>
             <div class="device-info">
-              <div class="device-name">{device.device_name || 'Unnamed Device'}</div>
+              <div class="device-name">{device.deviceName || 'Unnamed Device'}</div>
               <div class="device-meta">
-                <span>Added: {formatDate(device.created_at)}</span>
-                {#if device.last_used_at}
-                  <span>Last used: {formatDate(device.last_used_at)}</span>
+                <span>Added: {formatDate(device.createdAt)}</span>
+                {#if device.lastUsedAt}
+                  <span>Last used: {formatDate(device.lastUsedAt)}</span>
                 {/if}
               </div>
-              <div class="device-expiry" class:warning={isExpiringSoon(device.expires_at)}>
-                Expires: {formatDate(device.expires_at)}
-                {#if isExpiringSoon(device.expires_at)}
+              <div class="device-expiry" class:warning={isExpiringSoon(device.expiresAt)}>
+                Expires: {formatDate(device.expiresAt)}
+                {#if isExpiringSoon(device.expiresAt)}
                   <span class="badge-warning">Expiring soon!</span>
                 {/if}
               </div>
