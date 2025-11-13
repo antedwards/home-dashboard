@@ -6,10 +6,8 @@
 
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { createDbClient } from '@home-dashboard/database/db/client';
 import { deviceCodes, deviceTokens, familyMembers } from '@home-dashboard/database/db/schema';
 import { eq, and } from 'drizzle-orm';
-import { DATABASE_URL } from '$env/static/private';
 
 async function sha256Hash(text: string): Promise<string> {
   const encoder = new TextEncoder();
@@ -35,7 +33,11 @@ function arrayBufferToBase64Url(buffer: ArrayBuffer): string {
 export const POST: RequestHandler = async ({ request }) => {
   try {
     const { grant_type, device_code, refresh_token, device_id } = await request.json();
-    const db = createDbClient(DATABASE_URL);
+    const db = event.locals.db;
+
+  if (!db) {
+    return json({ error: 'Database connection not available' }, { status: 500 });
+  }
 
     if (grant_type === 'urn:ietf:params:oauth:grant-type:device_code') {
       // Device code flow - polling

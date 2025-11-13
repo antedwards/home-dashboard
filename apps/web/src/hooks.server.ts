@@ -7,8 +7,20 @@
 import { createServerClient } from '@supabase/ssr';
 import type { Handle } from '@sveltejs/kit';
 import { PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_ANON_KEY } from '$env/static/public';
+import { createDbClient } from '@home-dashboard/database/db/client';
+import { dev } from '$app/environment';
 
 export const handle: Handle = async ({ event, resolve }) => {
+  // Initialize database connection from Hyperdrive (production) or env var (development)
+  const connectionString = dev
+    ? process.env.DATABASE_URL
+    : event.platform?.env?.HYPERDRIVE?.connectionString;
+
+  if (!connectionString) {
+    console.error('Database connection string not available');
+  } else {
+    event.locals.db = createDbClient(connectionString);
+  }
   // Handle CORS preflight requests for Electron app
   if (event.request.method === 'OPTIONS') {
     return new Response(null, {

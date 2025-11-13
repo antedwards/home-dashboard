@@ -1,9 +1,7 @@
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { createDbClient } from '@home-dashboard/database/db/client';
 import { familyMembers } from '@home-dashboard/database/db/schema';
 import { eq } from 'drizzle-orm';
-import { DATABASE_URL } from '$env/static/private';
 
 export const load: PageServerLoad = async ({ locals }) => {
   // Check if user is authenticated
@@ -15,7 +13,11 @@ export const load: PageServerLoad = async ({ locals }) => {
   }
 
   // Get user's family using Drizzle (bypasses RLS issues)
-  const db = createDbClient(DATABASE_URL);
+  const db = event.locals.db;
+
+  if (!db) {
+    return json({ error: 'Database connection not available' }, { status: 500 });
+  }
   const [member] = await db
     .select()
     .from(familyMembers)

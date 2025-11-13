@@ -6,10 +6,8 @@
 
 import type { RequestEvent } from '@sveltejs/kit';
 import { error } from '@sveltejs/kit';
-import { createDbClient } from '@home-dashboard/database/db/client';
 import { deviceTokens, familyMembers } from '@home-dashboard/database/db/schema';
 import { eq, and, gt } from 'drizzle-orm';
-import { DATABASE_URL } from '$env/static/private';
 
 async function hashToken(token: string): Promise<string> {
   const encoder = new TextEncoder();
@@ -31,7 +29,11 @@ export async function getAuthUser(event: RequestEvent): Promise<{
   familyId: string;
   authType: 'device' | 'session';
 }> {
-  const db = createDbClient(DATABASE_URL);
+  if (!event.locals.db) {
+    throw error(500, 'Database connection not available');
+  }
+
+  const db = event.locals.db;
 
   // Try device token from Authorization header
   const authHeader = event.request.headers.get('Authorization');

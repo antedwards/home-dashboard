@@ -6,11 +6,9 @@
 
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { createDbClient } from '@home-dashboard/database/db/client';
 import { deviceCodes, deviceTokens, familyMembers } from '@home-dashboard/database/db/schema';
 import { eq, and, gt } from 'drizzle-orm';
 import { requireAuth } from '$lib/server/auth';
-import { DATABASE_URL } from '$env/static/private';
 
 async function sha256Hash(text: string): Promise<string> {
   const encoder = new TextEncoder();
@@ -44,7 +42,11 @@ export const POST: RequestHandler = async (event) => {
     // Authenticate user (must be logged in via session)
     const { userId, familyId } = await requireAuth(event);
 
-    const db = createDbClient(DATABASE_URL);
+    const db = event.locals.db;
+
+  if (!db) {
+    return json({ error: 'Database connection not available' }, { status: 500 });
+  }
 
     // Find the device code
     const [deviceCodeData] = await db
