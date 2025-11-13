@@ -9,8 +9,9 @@ import { createDbClient } from '@home-dashboard/database/db/client';
 import { invitations } from '@home-dashboard/database/db/schema';
 import { eq } from 'drizzle-orm';
 import { requireAuth } from '$lib/server/auth';
-import { DATABASE_URL } from '$env/static/private';
-import { PUBLIC_APP_URL } from '$env/static/public';
+import { createClient } from '@supabase/supabase-js';
+import { DATABASE_URL, SUPABASE_SERVICE_ROLE_KEY } from '$env/static/private';
+import { PUBLIC_APP_URL, PUBLIC_SUPABASE_URL } from '$env/static/public';
 
 // Generate a secure random token
 function generateToken(): string {
@@ -106,10 +107,6 @@ export const POST: RequestHandler = async (event) => {
 
     // Send invitation using Supabase's built-in invite system
     try {
-      const { SUPABASE_SERVICE_ROLE_KEY } = await import('$env/static/private');
-      const { PUBLIC_SUPABASE_URL } = await import('$env/static/public');
-      const { createClient } = await import('@supabase/supabase-js');
-
       // Create admin client
       const supabaseAdmin = createClient(PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
         auth: {
