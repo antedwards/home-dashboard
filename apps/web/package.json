@@ -15,6 +15,7 @@
     "@home-dashboard/sync": "workspace:*",
     "@home-dashboard/ui": "workspace:*",
     "@supabase/ssr": "^0.7.0",
+    "@supabase/supabase-js": "^2.49.1",
     "drizzle-orm": "^0.44.7",
     "postgres": "^3.4.7"
   },
