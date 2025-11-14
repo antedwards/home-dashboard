@@ -45,18 +45,57 @@ Before deploying, you need to update the Hyperdrive ID in `apps/web/wrangler.tom
 
 Cloudflare Pages cannot make direct TCP connections to Postgres databases. Hyperdrive is Cloudflare's connection pooler that enables Postgres access from Workers/Pages.
 
+### 2.0 Configure Local Development
+
+Before deploying to Cloudflare, you need to configure the local development environment to work with the Hyperdrive binding.
+
+The `wrangler.toml` file includes a Hyperdrive binding that needs a local connection string for development. Update the `localConnectionString` in `apps/web/wrangler.toml` to match your local database:
+
+```toml
+[[hyperdrive]]
+binding = "HYPERDRIVE"
+id = "your-hyperdrive-id-here"
+# Update this to match your local DATABASE_URL
+localConnectionString = "postgresql://postgres:postgres@localhost:54322/postgres"
+```
+
+**Common local connection strings:**
+
+| Setup | Connection String |
+|-------|-------------------|
+| Supabase (IPv4 pooler) | `postgresql://postgres.project:password@aws-1-region.pooler.supabase.com:6543/postgres` |
+| Local Supabase | `postgresql://postgres:postgres@localhost:54322/postgres` |
+| Local Postgres | `postgresql://postgres:postgres@localhost:5432/postgres` |
+| Docker Compose | Check your `docker-compose.yml` for credentials |
+
+**Important for Supabase users:**
+- Use the **transaction pooler** (port 6543) for postgres-js compatibility
+- Use the **IPv4 endpoint** (`aws-1-*`) instead of IPv6 (`aws-0-*`) for better local compatibility
+- Find your connection string in: Supabase Dashboard → Settings → Database → Connection string → Transaction mode
+
+**Alternative:** Instead of editing `wrangler.toml`, you can set the environment variable:
+```bash
+export CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE="postgresql://postgres:postgres@localhost:54322/postgres"
+```
+
+**Note:** The local connection string is only used for development. In production, Cloudflare uses the Hyperdrive configuration created in Step 2.2.
+
 ### 2.1 Get Supabase Database Credentials
 
 1. Go to your [Supabase Dashboard](https://app.supabase.com)
 2. Select your project
 3. Go to **Settings** → **Database**
 4. Scroll to **Connection string** section
-5. Select **URI** mode
-6. Copy the connection string (it should look like):
+5. Select **Transaction** mode (not Session or Direct)
+6. Select **Use connection pooling** with IPv4
+7. Copy the connection string (it should look like):
    ```
-   postgresql://postgres.xxxxx:[YOUR-PASSWORD]@aws-0-us-east-1.pooler.supabase.com:5432/postgres
+   postgresql://postgres.xxxxx:[YOUR-PASSWORD]@aws-1-us-east-1.pooler.supabase.com:6543/postgres
    ```
-7. **Important**: Replace `[YOUR-PASSWORD]` with your actual database password
+8. **Important**:
+   - Replace `[YOUR-PASSWORD]` with your actual database password
+   - Ensure it uses `aws-1-*` (IPv4) not `aws-0-*` (IPv6)
+   - Ensure port is **6543** (transaction pooler)
 
 ### 2.2 Create Hyperdrive Configuration
 
@@ -72,8 +111,9 @@ npm install -g wrangler
 wrangler login
 
 # Create Hyperdrive configuration
+# Use IPv4 endpoint (aws-1-*) and transaction pooler (port 6543)
 npx wrangler hyperdrive create home-dashboard-db \
-  --connection-string="postgresql://postgres.xxxxx:[YOUR-PASSWORD]@aws-0-us-east-1.pooler.supabase.com:5432/postgres"
+  --connection-string="postgresql://postgres.xxxxx:[YOUR-PASSWORD]@aws-1-us-east-1.pooler.supabase.com:6543/postgres"
 ```
 
 **Save the ID** that's printed - you'll need it for the next step (looks like: `a76a99bc76a9b5c`)

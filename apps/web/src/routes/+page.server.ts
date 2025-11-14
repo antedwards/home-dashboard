@@ -23,11 +23,26 @@ export const load: PageServerLoad = async ({ locals }) => {
       familyId: null,
     };
   }
-  const [member] = await db
-    .select()
-    .from(familyMembers)
-    .where(eq(familyMembers.userId, session.user.id))
-    .limit(1);
+  let member;
+  try {
+    [member] = await db
+      .select()
+      .from(familyMembers)
+      .where(eq(familyMembers.userId, session.user.id))
+      .limit(1);
+  } catch (error) {
+    console.error('Database query error:', error);
+    console.error('Error details:', {
+      message: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined,
+      userId: session.user.id,
+    });
+    return {
+      error: 'Database connection error. Please try again.',
+      userId: session.user.id,
+      familyId: null,
+    };
+  }
 
   if (!member) {
     console.error('Family lookup error: No family member found for user');

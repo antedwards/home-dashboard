@@ -9,6 +9,11 @@ pages_build_output_dir = ".svelte-kit/cloudflare"
 [[hyperdrive]]
 binding = "HYPERDRIVE"
 id = "c4dc02b996ec44bb921033b4d434d9fe"
+# For local development, use transaction pooler (port 6543) for postgres-js compatibility
+# This should match your DATABASE_URL from .env
+localConnectionString = "postgresql://postgres.mmqlhseqjgbkjeohfoky:6NPn7zuzxh5ohNZg@aws-1-eu-west-2.pooler.supabase.com:6543/postgres"
 
-# Note: Replace REPLACE_WITH_YOUR_HYPERDRIVE_ID with your actual Hyperdrive ID from step 2.2
-# You can find it by running: npx wrangler hyperdrive list
+# Note:
+# - Use transaction pooler (port 6543) for postgres-js driver
+# - Direct connection (port 5432) doesn't support all features needed by postgres-js
+# - Alternatively, set the environment variable: CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE

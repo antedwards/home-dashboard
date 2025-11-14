@@ -84,15 +84,17 @@
             onclick={() => handleDateClick(day)}
             type="button"
           >
-            <button
+            <div
               class="day-number-button"
               class:today-number={day.isToday}
               onclick={(e) => handleDayHeaderClick(day, e)}
-              type="button"
+              role="button"
+              tabindex="0"
+              onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleDayHeaderClick(day, e); }}
               title="Click to create an all-day event"
             >
               <div class="day-number">{day.dayOfMonth}</div>
-            </button>
+            </div>
             <div class="day-events">
               {#each dayEvents.slice(0, 3) as event}
                 <button
