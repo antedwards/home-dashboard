@@ -12,6 +12,15 @@ export interface ParsedEvent {
   external_calendar: string;
   external_url: string;
   etag: string | null;
+  // iCalendar-specific fields
+  status: 'tentative' | 'confirmed' | 'cancelled';
+  sequence: number;
+  transparency: 'opaque' | 'transparent';
+  priority: number;
+  classification: 'public' | 'private' | 'confidential';
+  organizer: string | null;
+  ical_uid: string;
+  ical_timestamp: string | null;
 }
 
 /**
@@ -57,6 +66,32 @@ export function parseICalendarData(icsData: string, calendarName: string, calend
         rrule = recurrenceProperty.toICALString(); // e.g., "FREQ=WEEKLY;BYDAY=MO,WE,FR"
       }
 
+      // Get STATUS field (tentative, confirmed, cancelled)
+      const statusProp = vevent.getFirstPropertyValue('status');
+      const status = statusProp ? statusProp.toLowerCase() : 'confirmed';
+
+      // Get SEQUENCE field (version number)
+      const sequence = vevent.getFirstPropertyValue('sequence') || 0;
+
+      // Get TRANSP field (transparency - opaque=busy, transparent=free)
+      const transpProp = vevent.getFirstPropertyValue('transp');
+      const transparency = transpProp === 'TRANSPARENT' ? 'transparent' : 'opaque';
+
+      // Get PRIORITY field (0-9)
+      const priority = vevent.getFirstPropertyValue('priority') || 0;
+
+      // Get CLASS field (access classification)
+      const classProp = vevent.getFirstPropertyValue('class');
+      const classification = classProp ? classProp.toLowerCase() : 'public';
+
+      // Get ORGANIZER field
+      const organizerProp = vevent.getFirstProperty('organizer');
+      const organizer = organizerProp ? organizerProp.getFirstValue() : null;
+
+      // Get DTSTAMP field (last modification timestamp)
+      const dtstampProp = vevent.getFirstPropertyValue('dtstamp');
+      const icalTimestamp = dtstampProp ? dtstampProp.toJSDate().toISOString() : null;
+
       events.push({
         external_uid: uid,
         title: summary,
@@ -69,6 +104,15 @@ export function parseICalendarData(icsData: string, calendarName: string, calend
         external_calendar: calendarName,
         external_url: calendarUrl,
         etag: null, // ETag comes from HTTP headers, not iCal data
+        // iCalendar-specific fields
+        status: status as 'tentative' | 'confirmed' | 'cancelled',
+        sequence,
+        transparency: transparency as 'opaque' | 'transparent',
+        priority: Math.max(0, Math.min(9, priority)), // Clamp to 0-9
+        classification: classification as 'public' | 'private' | 'confidential',
+        organizer,
+        ical_uid: uid,
+        ical_timestamp: icalTimestamp,
       });
     }
 
@@ -92,8 +136,8 @@ export function eventToICalendar(event: any): string {
   // Create event component
   const vevent = new ICAL.Component('vevent');
 
-  // Add UID (use external UID if available, otherwise generate)
-  vevent.addPropertyWithValue('uid', event.external_uid || event.id);
+  // Add UID (use ical_uid if available, otherwise external_uid or id)
+  vevent.addPropertyWithValue('uid', event.ical_uid || event.external_uid || event.id);
 
   // Add summary (title)
   vevent.addPropertyWithValue('summary', event.title || 'Untitled Event');
@@ -120,11 +164,44 @@ export function eventToICalendar(event: any): string {
     vevent.addPropertyWithValue('rrule', ICAL.Recur.fromString(event.recurrence_rule));
   }
 
+  // Add iCalendar-specific fields
+  if (event.status) {
+    vevent.addPropertyWithValue('status', event.status.toUpperCase());
+  }
+
+  if (event.sequence !== undefined && event.sequence !== null) {
+    vevent.addPropertyWithValue('sequence', event.sequence);
+  }
+
+  if (event.transparency) {
+    vevent.addPropertyWithValue('transp', event.transparency.toUpperCase());
+  }
+
+  if (event.priority !== undefined && event.priority !== null && event.priority !== 0) {
+    vevent.addPropertyWithValue('priority', event.priority);
+  }
+
+  if (event.classification) {
+    vevent.addPropertyWithValue('class', event.classification.toUpperCase());
+  }
+
+  if (event.organizer) {
+    vevent.addPropertyWithValue('organizer', event.organizer);
+  }
+
   // Add timestamps
-  const now = ICAL.Time.now();
-  vevent.addPropertyWithValue('dtstamp', now);
-  vevent.addPropertyWithValue('created', ICAL.Time.fromJSDate(new Date(event.created_at)));
-  vevent.addPropertyWithValue('last-modified', ICAL.Time.fromJSDate(new Date(event.updated_at)));
+  const dtstamp = event.ical_timestamp
+    ? ICAL.Time.fromJSDate(new Date(event.ical_timestamp))
+    : ICAL.Time.now();
+  vevent.addPropertyWithValue('dtstamp', dtstamp);
+
+  if (event.created_at) {
+    vevent.addPropertyWithValue('created', ICAL.Time.fromJSDate(new Date(event.created_at)));
+  }
+
+  if (event.updated_at) {
+    vevent.addPropertyWithValue('last-modified', ICAL.Time.fromJSDate(new Date(event.updated_at)));
+  }
 
   // Add event to calendar
   comp.addSubcomponent(vevent);

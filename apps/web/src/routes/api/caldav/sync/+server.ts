@@ -33,7 +33,13 @@ async function syncEventToDatabase(connection: any, parsedEvent: ParsedEvent): P
       existingEvent.end_time !== parsedEvent.end_time ||
       existingEvent.all_day !== parsedEvent.all_day ||
       existingEvent.location !== parsedEvent.location ||
-      existingEvent.recurrence_rule !== parsedEvent.recurrence_rule;
+      existingEvent.recurrence_rule !== parsedEvent.recurrence_rule ||
+      existingEvent.status !== parsedEvent.status ||
+      existingEvent.sequence !== parsedEvent.sequence ||
+      existingEvent.transparency !== parsedEvent.transparency ||
+      existingEvent.priority !== parsedEvent.priority ||
+      existingEvent.classification !== parsedEvent.classification ||
+      existingEvent.organizer !== parsedEvent.organizer;
 
     if (needsUpdate) {
       // Update existing event
@@ -47,6 +53,15 @@ async function syncEventToDatabase(connection: any, parsedEvent: ParsedEvent): P
           all_day: parsedEvent.all_day,
           location: parsedEvent.location,
           recurrence_rule: parsedEvent.recurrence_rule,
+          // iCalendar-specific fields
+          status: parsedEvent.status,
+          sequence: parsedEvent.sequence,
+          transparency: parsedEvent.transparency,
+          priority: parsedEvent.priority,
+          classification: parsedEvent.classification,
+          organizer: parsedEvent.organizer,
+          ical_uid: parsedEvent.ical_uid,
+          ical_timestamp: parsedEvent.ical_timestamp,
           updated_at: new Date().toISOString(),
         })
         .eq('id', existingEvent.id);
@@ -85,6 +100,15 @@ async function syncEventToDatabase(connection: any, parsedEvent: ParsedEvent): P
         all_day: parsedEvent.all_day,
         location: parsedEvent.location,
         recurrence_rule: parsedEvent.recurrence_rule,
+        // iCalendar-specific fields
+        status: parsedEvent.status,
+        sequence: parsedEvent.sequence,
+        transparency: parsedEvent.transparency,
+        priority: parsedEvent.priority,
+        classification: parsedEvent.classification,
+        organizer: parsedEvent.organizer,
+        ical_uid: parsedEvent.ical_uid,
+        ical_timestamp: parsedEvent.ical_timestamp,
       })
       .select()
       .single();
