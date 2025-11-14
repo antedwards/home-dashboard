@@ -5,6 +5,7 @@ import { PUBLIC_SUPABASE_URL } from '$env/static/public';
 import { SUPABASE_SERVICE_ROLE_KEY } from '$env/static/private';
 import { createDAVClient } from 'tsdav';
 import { parseICalendarData } from '$lib/caldav/ical-parser';
+import { decryptPassword } from '$lib/server/crypto';
 
 const supabase = createClient(PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
@@ -152,11 +153,14 @@ export const GET: RequestHandler = async ({ request }) => {
           })
           .eq('id', connection.id);
 
+        // Decrypt password
+        const decryptedPassword = await decryptPassword(connection.password_encrypted);
+
         const client = await createDAVClient({
           serverUrl: connection.server_url,
           credentials: {
             username: connection.email,
-            password: connection.password_encrypted,
+            password: decryptedPassword,
           },
           authMethod: 'Basic',
           defaultAccountType: 'caldav',

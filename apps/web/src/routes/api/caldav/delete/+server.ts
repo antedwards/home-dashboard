@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 import { PUBLIC_SUPABASE_URL } from '$env/static/public';
 import { SUPABASE_SERVICE_ROLE_KEY } from '$env/static/private';
 import { createDAVClient } from 'tsdav';
+import { decryptPassword } from '$lib/server/crypto';
 
 const supabase = createClient(PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
@@ -11,12 +12,15 @@ const supabase = createClient(PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
  * Delete an event from CalDAV server
  */
 async function deleteEventFromCalDAV(connection: any, mapping: any): Promise<void> {
+  // Decrypt password
+  const decryptedPassword = await decryptPassword(connection.password_encrypted);
+
   // Create DAV client
   const client = await createDAVClient({
     serverUrl: connection.server_url,
     credentials: {
       username: connection.email,
-      password: connection.password_encrypted, // TODO: Decrypt this
+      password: decryptedPassword,
     },
     authMethod: 'Basic',
     defaultAccountType: 'caldav',

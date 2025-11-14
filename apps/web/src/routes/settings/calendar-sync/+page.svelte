@@ -95,36 +95,25 @@
 
   async function saveConnection(displayName?: string) {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Not authenticated');
-
-      // Get user's family
-      const { data: profile } = await supabase
-        .from('user_profiles')
-        .select('family_id')
-        .eq('id', user.id)
-        .single();
-
-      if (!profile?.family_id) {
-        throw new Error('No family found. Please create or join a family first.');
-      }
-
       const serverUrl = getServerUrl(formProvider);
 
-      const { error: insertError } = await supabase
-        .from('caldav_connections')
-        .insert({
-          user_id: user.id,
-          family_id: profile.family_id,
+      // Save connection with encrypted password via API
+      const response = await fetch('/api/caldav/connections', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
           email: formEmail,
-          password_encrypted: formPassword, // TODO: Encrypt this properly
-          server_url: serverUrl,
-          display_name: displayName || formEmail,
-          enabled: true,
-          last_sync_status: 'pending',
-        });
+          password: formPassword,
+          serverUrl,
+          displayName: displayName || formEmail,
+        }),
+      });
 
-      if (insertError) throw insertError;
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to save connection');
+      }
 
       // Reset form
       formEmail = '';
