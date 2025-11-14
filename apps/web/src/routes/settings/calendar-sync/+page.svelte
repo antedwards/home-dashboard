@@ -284,7 +284,7 @@
         {#if showAddForm}
           <div class="connection-form">
             <div class="form-header">
-              <h3>Connect Calendar</h3>
+              <h3>Connect Your Calendar</h3>
               <button class="btn-close" onclick={() => (showAddForm = false)}>×</button>
             </div>
 
@@ -295,16 +295,60 @@
               </div>
             {/if}
 
+            <!-- Step-by-step instructions -->
+            <div class="instructions-box">
+              <h4>📱 Quick Setup (5 minutes)</h4>
+              {#if formProvider === 'icloud'}
+                <ol class="setup-steps">
+                  <li>
+                    <strong>On your iPhone:</strong>
+                    <div class="step-detail">Settings → Your Name → Sign-In & Security → App-Specific Passwords → Create one for "Home Dashboard"</div>
+                  </li>
+                  <li>
+                    <strong>Or on Mac/PC:</strong>
+                    <div class="step-detail">
+                      Go to <a href="https://appleid.apple.com" target="_blank" rel="noopener">appleid.apple.com</a> → Security → App-Specific Passwords → Generate
+                    </div>
+                  </li>
+                  <li>
+                    <strong>Copy the password</strong>
+                    <div class="step-detail">It looks like: xxxx-xxxx-xxxx-xxxx (16 characters)</div>
+                  </li>
+                  <li>
+                    <strong>Paste it below</strong>
+                    <div class="step-detail">Your calendar will sync automatically every 15 minutes</div>
+                  </li>
+                </ol>
+              {:else}
+                <ol class="setup-steps">
+                  <li>
+                    <strong>Visit Google Account:</strong>
+                    <div class="step-detail">
+                      Go to <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener">myaccount.google.com/apppasswords</a>
+                    </div>
+                  </li>
+                  <li>
+                    <strong>Create app password:</strong>
+                    <div class="step-detail">Click "Create" → Name it "Home Dashboard" → Copy the 16-character password</div>
+                  </li>
+                  <li>
+                    <strong>Paste it below</strong>
+                    <div class="step-detail">Your calendar will sync automatically every 15 minutes</div>
+                  </li>
+                </ol>
+              {/if}
+            </div>
+
             <div class="form-group">
-              <label for="provider">Calendar Provider</label>
+              <label for="provider">Which calendar do you use?</label>
               <select id="provider" bind:value={formProvider} class="input">
-                <option value="icloud">iCloud Calendar</option>
-                <option value="google">Google Calendar</option>
+                <option value="icloud">📱 iCloud Calendar (iPhone)</option>
+                <option value="google">📧 Google Calendar (Gmail)</option>
               </select>
             </div>
 
             <div class="form-group">
-              <label for="email">Email Address</label>
+              <label for="email">Your email address</label>
               <input
                 id="email"
                 type="email"
@@ -313,10 +357,11 @@
                 class="input"
                 disabled={formSubmitting}
               />
+              <p class="help-text-inline">Use your {formProvider === 'icloud' ? 'Apple ID' : 'Gmail address'}</p>
             </div>
 
             <div class="form-group">
-              <label for="password">App-Specific Password</label>
+              <label for="password">App-specific password (not your regular password)</label>
               <input
                 id="password"
                 type="password"
@@ -325,22 +370,26 @@
                 class="input"
                 disabled={formSubmitting}
               />
-              <p class="help-text">
-                {#if formProvider === 'icloud'}
-                  Generate at: <a href="https://appleid.apple.com/account/manage" target="_blank" rel="noopener">appleid.apple.com</a> → Security → App-Specific Passwords
-                {:else}
-                  Generate at: <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener">Google Account</a> → Security → App passwords
-                {/if}
+              <p class="help-text-inline">
+                ✨ This is a special password just for this app. Generate one using the steps above.
               </p>
+            </div>
+
+            <div class="security-note">
+              <span class="security-icon">🔒</span>
+              <div class="security-text">
+                <strong>Secure & Private</strong>
+                <p>This password only works for calendar access. Your main password stays safe. You can revoke it anytime.</p>
+              </div>
             </div>
 
             <div class="form-actions">
               <button
-                class="btn btn-primary"
+                class="btn btn-primary btn-large"
                 onclick={testConnection}
                 disabled={formSubmitting || !formEmail || !formPassword}
               >
-                {formSubmitting ? 'Connecting...' : 'Connect & Sync'}
+                {formSubmitting ? '⟳ Connecting...' : '✓ Connect & Start Syncing'}
               </button>
               <button class="btn btn-secondary" onclick={() => (showAddForm = false)} disabled={formSubmitting}>
                 Cancel
@@ -685,6 +734,99 @@
 
   .help-text a:hover {
     text-decoration: underline;
+  }
+
+  .help-text-inline {
+    font-size: 0.875rem;
+    color: #6b7280;
+    margin-top: 0.5rem;
+  }
+
+  .instructions-box {
+    background: #f0f9ff;
+    border: 2px solid #bae6fd;
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .instructions-box h4 {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: #0c4a6e;
+    margin: 0 0 1rem 0;
+  }
+
+  .setup-steps {
+    margin: 0;
+    padding-left: 1.5rem;
+    list-style: decimal;
+  }
+
+  .setup-steps li {
+    margin-bottom: 1rem;
+    color: #0c4a6e;
+  }
+
+  .setup-steps li:last-child {
+    margin-bottom: 0;
+  }
+
+  .setup-steps strong {
+    display: block;
+    margin-bottom: 0.25rem;
+    color: #0c4a6e;
+  }
+
+  .step-detail {
+    font-size: 0.875rem;
+    color: #075985;
+    margin-top: 0.25rem;
+    line-height: 1.5;
+  }
+
+  .step-detail a {
+    color: #0284c7;
+    text-decoration: underline;
+    font-weight: 500;
+  }
+
+  .step-detail a:hover {
+    color: #0369a1;
+  }
+
+  .security-note {
+    display: flex;
+    gap: 0.75rem;
+    background: #fef3c7;
+    border: 1px solid #fde047;
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .security-icon {
+    font-size: 1.5rem;
+    flex-shrink: 0;
+  }
+
+  .security-text strong {
+    display: block;
+    color: #78350f;
+    font-size: 0.875rem;
+    margin-bottom: 0.25rem;
+  }
+
+  .security-text p {
+    color: #92400e;
+    font-size: 0.875rem;
+    margin: 0;
+    line-height: 1.5;
+  }
+
+  .btn-large {
+    padding: 0.75rem 1.5rem;
+    font-size: 1rem;
   }
 
   .form-actions {

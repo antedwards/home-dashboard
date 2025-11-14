@@ -16,6 +16,8 @@
     "@home-dashboard/ui": "workspace:*",
     "@supabase/ssr": "^0.7.0",
     "drizzle-orm": "^0.44.7",
+    "ical.js": "^2.2.1",
+    "node-ical": "^0.22.1",
     "postgres": "^3.4.7",
     "tsdav": "^2.1.6"
   },
