@@ -298,6 +298,15 @@
             <!-- Step-by-step instructions -->
             <div class="instructions-box">
               <h4>📱 Quick Setup (5 minutes)</h4>
+
+              <!-- Sync capabilities info -->
+              <div class="sync-info">
+                <span class="sync-badge">🔄 Bidirectional Sync</span>
+                <p class="sync-description">
+                  Changes sync both ways - create events in Home Dashboard or your calendar app, they'll appear everywhere!
+                </p>
+              </div>
+
               {#if formProvider === 'icloud'}
                 <ol class="setup-steps">
                   <li>
@@ -755,6 +764,32 @@
     font-weight: 600;
     color: #0c4a6e;
     margin: 0 0 1rem 0;
+  }
+
+  .sync-info {
+    background: #dcfce7;
+    border: 1px solid #86efac;
+    border-radius: 6px;
+    padding: 0.75rem 1rem;
+    margin-bottom: 1rem;
+  }
+
+  .sync-badge {
+    display: inline-block;
+    background: #16a34a;
+    color: white;
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    margin-bottom: 0.5rem;
+  }
+
+  .sync-description {
+    color: #15803d;
+    font-size: 0.875rem;
+    margin: 0.5rem 0 0 0;
+    line-height: 1.5;
   }
 
   .setup-steps {
