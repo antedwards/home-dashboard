@@ -5,10 +5,8 @@
 
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { createDbClient } from '@home-dashboard/database/db/client';
 import { users } from '@home-dashboard/database/db/schema';
 import { eq } from 'drizzle-orm';
-import { DATABASE_URL } from '$env/static/private';
 
 export const load: PageServerLoad = async ({ locals, url }) => {
   // Get the authenticated session (Supabase handles token exchange automatically)
@@ -20,7 +18,11 @@ export const load: PageServerLoad = async ({ locals, url }) => {
   }
 
   // Check if user has completed their profile
-  const db = createDbClient(DATABASE_URL);
+  const db = locals.db;
+
+  if (!db) {
+    return json({ error: 'Database connection not available' }, { status: 500 });
+  }
   const [userProfile] = await db
     .select()
     .from(users)

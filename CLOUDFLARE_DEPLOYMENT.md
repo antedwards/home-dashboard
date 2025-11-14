@@ -7,14 +7,132 @@ This guide walks you through deploying your Home Dashboard web app to Cloudflare
 - A domain managed by Cloudflare (e.g., `yourdomain.com`)
 - GitHub repository access
 - Cloudflare account
+- Supabase project with database
+
+## Quick Reference: Required Environment Variables
+
+| Variable | Required | Where to Set | Where to Find |
+|----------|----------|--------------|---------------|
+| `PNPM_VERSION` | Yes | Cloudflare Pages | Use `8` |
+| `NODE_VERSION` | Yes | Cloudflare Pages | Use `20` |
+| `PUBLIC_SUPABASE_URL` | Yes | Cloudflare Pages | Supabase → Settings → API → Project URL |
+| `PUBLIC_SUPABASE_ANON_KEY` | Yes | Cloudflare Pages | Supabase → Settings → API → anon/public key |
+| `SUPABASE_SERVICE_ROLE_KEY` | Yes | Cloudflare Pages | Supabase → Settings → API → service_role key |
+| `PUBLIC_APP_URL` | Yes | Cloudflare Pages | Your deployed URL (e.g., `https://app.yourdomain.com`) |
+| **Hyperdrive Binding** | Yes | Cloudflare Pages → Functions | Created in Step 2 |
+
+**Important:** Database access uses Hyperdrive bindings, NOT a `DATABASE_URL` environment variable.
 
 ## Step 1: Configure SvelteKit for Cloudflare
 
 ✅ **Already done!** The Cloudflare adapter has been installed and configured.
 
-## Step 2: Deploy to Cloudflare Pages
+### 1.1 Update Hyperdrive ID in wrangler.toml
 
-### 2.1 Access Cloudflare Pages
+Before deploying, you need to update the Hyperdrive ID in `apps/web/wrangler.toml`:
+
+1. After creating your Hyperdrive configuration (Step 2.2), you'll get a Hyperdrive ID
+2. Open `apps/web/wrangler.toml`
+3. Replace `REPLACE_WITH_YOUR_HYPERDRIVE_ID` with your actual Hyperdrive ID
+4. Commit the change: `git add apps/web/wrangler.toml && git commit -m "chore: Add Hyperdrive ID"`
+
+**Why do we need wrangler.toml?**
+- Enables `nodejs_compat` flag (required for postgres-js driver)
+- Configures Hyperdrive binding for database access
+- Sets compatibility date for Workers runtime
+
+## Step 2: Set Up Cloudflare Hyperdrive (Database Connection)
+
+Cloudflare Pages cannot make direct TCP connections to Postgres databases. Hyperdrive is Cloudflare's connection pooler that enables Postgres access from Workers/Pages.
+
+### 2.0 Configure Local Development
+
+Before deploying to Cloudflare, you need to configure the local development environment to work with the Hyperdrive binding.
+
+The `wrangler.toml` file includes a Hyperdrive binding that needs a local connection string for development. Update the `localConnectionString` in `apps/web/wrangler.toml` to match your local database:
+
+```toml
+[[hyperdrive]]
+binding = "HYPERDRIVE"
+id = "your-hyperdrive-id-here"
+# Update this to match your local DATABASE_URL
+localConnectionString = "postgresql://postgres:postgres@localhost:54322/postgres"
+```
+
+**Common local connection strings:**
+
+| Setup | Connection String |
+|-------|-------------------|
+| Supabase (IPv4 pooler) | `postgresql://postgres.project:password@aws-1-region.pooler.supabase.com:6543/postgres` |
+| Local Supabase | `postgresql://postgres:postgres@localhost:54322/postgres` |
+| Local Postgres | `postgresql://postgres:postgres@localhost:5432/postgres` |
+| Docker Compose | Check your `docker-compose.yml` for credentials |
+
+**Important for Supabase users:**
+- Use the **transaction pooler** (port 6543) for postgres-js compatibility
+- Use the **IPv4 endpoint** (`aws-1-*`) instead of IPv6 (`aws-0-*`) for better local compatibility
+- Find your connection string in: Supabase Dashboard → Settings → Database → Connection string → Transaction mode
+
+**Alternative:** Instead of editing `wrangler.toml`, you can set the environment variable:
+```bash
+export CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE="postgresql://postgres:postgres@localhost:54322/postgres"
+```
+
+**Note:** The local connection string is only used for development. In production, Cloudflare uses the Hyperdrive configuration created in Step 2.2.
+
+### 2.1 Get Supabase Database Credentials
+
+1. Go to your [Supabase Dashboard](https://app.supabase.com)
+2. Select your project
+3. Go to **Settings** → **Database**
+4. Scroll to **Connection string** section
+5. Select **Transaction** mode (not Session or Direct)
+6. Select **Use connection pooling** with IPv4
+7. Copy the connection string (it should look like):
+   ```
+   postgresql://postgres.xxxxx:[YOUR-PASSWORD]@aws-1-us-east-1.pooler.supabase.com:6543/postgres
+   ```
+8. **Important**:
+   - Replace `[YOUR-PASSWORD]` with your actual database password
+   - Ensure it uses `aws-1-*` (IPv4) not `aws-0-*` (IPv6)
+   - Ensure port is **6543** (transaction pooler)
+
+### 2.2 Create Hyperdrive Configuration
+
+You can use either the Dashboard or CLI. **CLI is recommended** for automation:
+
+#### Option A: Using Wrangler CLI (Recommended)
+
+```bash
+# Install wrangler if you haven't already
+npm install -g wrangler
+
+# Login to Cloudflare
+wrangler login
+
+# Create Hyperdrive configuration
+# Use IPv4 endpoint (aws-1-*) and transaction pooler (port 6543)
+npx wrangler hyperdrive create home-dashboard-db \
+  --connection-string="postgresql://postgres.xxxxx:[YOUR-PASSWORD]@aws-1-us-east-1.pooler.supabase.com:6543/postgres"
+```
+
+**Save the ID** that's printed - you'll need it for the next step (looks like: `a76a99bc76a9b5c`)
+
+#### Option B: Using Cloudflare Dashboard
+
+1. Go to [Cloudflare Dashboard](https://dash.cloudflare.com)
+2. Select your account
+3. Go to **Workers & Pages** → **Hyperdrive**
+4. Click **Create configuration**
+5. Enter:
+   - **Name**: `home-dashboard-db`
+   - **Connection string**: Your Supabase connection string from step 2.1
+6. Click **Create**
+7. **Save the configuration ID** from the URL or details page
+
+## Step 3: Deploy to Cloudflare Pages
+
+### 3.1 Access Cloudflare Pages
 
 1. Log in to your [Cloudflare Dashboard](https://dash.cloudflare.com)
 2. Select your account
@@ -28,7 +146,7 @@ This guide walks you through deploying your Home Dashboard web app to Cloudflare
 3. Select your repository: `antedwards/home-dashboard`
 4. Click **Begin setup**
 
-### 2.3 Configure Build Settings
+### 3.2 Configure Build Settings
 
 Set up your build configuration:
 
@@ -42,7 +160,7 @@ Set up your build configuration:
 | **Root directory** | `/` (leave empty or set to root) |
 | **Node version** | `20` |
 
-#### Important Build Settings
+#### Environment Variables
 
 Click **Environment variables (advanced)** and add:
 
@@ -53,20 +171,45 @@ Click **Environment variables (advanced)** and add:
 | `PUBLIC_SUPABASE_URL` | `https://your-project.supabase.co` | Your Supabase URL |
 | `PUBLIC_SUPABASE_ANON_KEY` | `your-anon-key` | Your Supabase anon key |
 | `SUPABASE_SERVICE_ROLE_KEY` | `your-service-role-key` | For server-side operations (keep secret!) |
+| `PUBLIC_APP_URL` | `https://home-dashboard.pages.dev` | Your deployed app URL (use .pages.dev initially, update after custom domain) |
 
 **Where to find these values:**
 - Supabase Dashboard → Settings → API
 - `PUBLIC_SUPABASE_URL`: Project URL
 - `PUBLIC_SUPABASE_ANON_KEY`: anon/public key
 - `SUPABASE_SERVICE_ROLE_KEY`: service_role key (keep this secret!)
+- `PUBLIC_APP_URL`: Your Cloudflare Pages URL (initially `*.pages.dev`, later your custom domain)
 
-### 2.4 Deploy
+**Note:** `DATABASE_URL` is NOT needed - database access is handled by Hyperdrive bindings.
+
+### 3.3 Verify Configuration
+
+At this point, you should have:
+
+✅ **Environment Variables Set** (in Cloudflare Pages → Settings):
+- `PNPM_VERSION` = `8`
+- `NODE_VERSION` = `20`
+- `PUBLIC_SUPABASE_URL` = Your Supabase URL
+- `PUBLIC_SUPABASE_ANON_KEY` = Your anon key
+- `SUPABASE_SERVICE_ROLE_KEY` = Your service role key
+- `PUBLIC_APP_URL` = Your .pages.dev URL
+
+✅ **Hyperdrive Configuration**:
+- Created via `wrangler hyperdrive create` (Step 2.2)
+- ID added to `apps/web/wrangler.toml` (Step 1.1)
+
+✅ **wrangler.toml File**:
+- Located at `apps/web/wrangler.toml`
+- Contains `nodejs_compat` flag
+- Contains Hyperdrive binding with your ID
+
+### 3.4 Deploy
 
 1. Click **Save and Deploy**
 2. Wait for the build to complete (usually 2-5 minutes)
 3. You'll get a temporary URL like: `home-dashboard.pages.dev`
 
-## Step 3: Set Up Custom Subdomain
+## Step 4: Set Up Custom Subdomain
 
 ### 3.1 Add Custom Domain
 
@@ -96,7 +239,7 @@ Proxy: Enabled (orange cloud)
 2. Visit `https://app.yourdomain.com`
 3. Your app should be live! 🎉
 
-## Step 4: Update Environment Variables
+## Step 5: Update Environment Variables
 
 Now that you have your subdomain, update your Electron app configuration:
 
@@ -119,7 +262,7 @@ Add or update:
 - `SUPABASE_URL`: `https://your-project.supabase.co`
 - `SUPABASE_SERVICE_ROLE_KEY`: Your service role key
 
-## Step 5: Test the Deployment
+## Step 6: Test the Deployment
 
 ### 5.1 Test Web App
 

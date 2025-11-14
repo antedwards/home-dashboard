@@ -8,6 +8,7 @@
     events?: CalendarEvent[];
     onDateClick?: (date: Date) => void;
     onEventClick?: (event: CalendarEvent) => void;
+    onDayHeaderClick?: (date: Date) => void;
   }
 
   const now = new Date();
@@ -17,6 +18,7 @@
     events = [],
     onDateClick,
     onEventClick,
+    onDayHeaderClick,
   }: Props = $props();
 
   const calendarMonth = $derived(generateCalendarMonth(year, month));
@@ -35,6 +37,13 @@
   function handleDateClick(day: CalendarDay) {
     if (onDateClick) {
       onDateClick(day.date);
+    }
+  }
+
+  function handleDayHeaderClick(day: CalendarDay, e: MouseEvent) {
+    e.stopPropagation();
+    if (onDayHeaderClick) {
+      onDayHeaderClick(day.date);
     }
   }
 
@@ -75,7 +84,17 @@
             onclick={() => handleDateClick(day)}
             type="button"
           >
-            <div class="day-number">{day.dayOfMonth}</div>
+            <div
+              class="day-number-button"
+              class:today-number={day.isToday}
+              onclick={(e) => handleDayHeaderClick(day, e)}
+              role="button"
+              tabindex="0"
+              onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleDayHeaderClick(day, e); }}
+              title="Click to create an all-day event"
+            >
+              <div class="day-number">{day.dayOfMonth}</div>
+            </div>
             <div class="day-events">
               {#each dayEvents.slice(0, 3) as event}
                 <button
@@ -183,7 +202,20 @@
     background: #eff6ff;
   }
 
-  .day-cell.today .day-number {
+  .day-number-button {
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    transition: opacity 0.2s;
+    margin-bottom: 0.25rem;
+  }
+
+  .day-number-button:hover {
+    opacity: 0.7;
+  }
+
+  .day-number-button.today-number {
     background: #3b82f6;
     color: white;
     border-radius: 50%;
@@ -192,6 +224,10 @@
     display: flex;
     align-items: center;
     justify-content: center;
+  }
+
+  .day-number-button.today-number:hover {
+    opacity: 0.9;
   }
 
   .day-cell.other-month {
@@ -206,7 +242,7 @@
     font-size: 0.875rem;
     font-weight: 600;
     color: #333;
-    margin-bottom: 0.25rem;
+    pointer-events: none;
   }
 
   .day-events {

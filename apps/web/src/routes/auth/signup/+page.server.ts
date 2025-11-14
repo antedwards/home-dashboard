@@ -5,10 +5,8 @@
 
 import { redirect, fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
-import { createDbClient } from '@home-dashboard/database/db/client';
 import { users, invitations } from '@home-dashboard/database/db/schema';
 import { eq, isNull, and } from 'drizzle-orm';
-import { DATABASE_URL } from '$env/static/private';
 
 export const load: PageServerLoad = async ({ locals }) => {
   const session = await locals.getSession?.();
@@ -31,7 +29,11 @@ export const actions: Actions = {
     }
 
     // Check if there's a valid invitation
-    const db = createDbClient(DATABASE_URL);
+    const db = locals.db;
+
+  if (!db) {
+    return json({ error: 'Database connection not available' }, { status: 500 });
+  }
 
     const [invitation] = await db
       .select()
@@ -89,7 +91,11 @@ export const actions: Actions = {
     }
 
     // Create user profile in database
-    const db = createDbClient(DATABASE_URL);
+    const db = locals.db;
+
+  if (!db) {
+    return json({ error: 'Database connection not available' }, { status: 500 });
+  }
 
     try {
       await db.insert(users).values({

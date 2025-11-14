@@ -6,6 +6,7 @@
     open: boolean;
     event?: CalendarEvent | null;
     initialDate?: Date;
+    initialAllDay?: boolean;
     familyMembers?: User[];
     categories?: Category[];
     onClose: () => void;
@@ -18,6 +19,7 @@
     open = $bindable(false),
     event = null,
     initialDate = new Date(),
+    initialAllDay = false,
     familyMembers = [],
     categories = [],
     onClose,
@@ -74,7 +76,7 @@
         startTime = start.toTimeString().slice(0, 5);
         endDate = end.toISOString().split('T')[0];
         endTime = end.toTimeString().slice(0, 5);
-        allDay = false;
+        allDay = initialAllDay; // Use the passed initialAllDay prop
         location = '';
         selectedCategoryId = null;
         selectedAttendeeIds = [];

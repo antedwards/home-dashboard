@@ -6,11 +6,9 @@
 
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { createDbClient } from '@home-dashboard/database/db/client';
 import { events } from '@home-dashboard/database/db/schema';
 import { eq, and, gte, lte } from 'drizzle-orm';
 import { requireAuth } from '$lib/server/auth';
-import { DATABASE_URL } from '$env/static/private';
 
 export const GET: RequestHandler = async (event) => {
   try {
@@ -23,7 +21,11 @@ export const GET: RequestHandler = async (event) => {
     const endDate = url.searchParams.get('end');
 
     // Initialize database
-    const db = createDbClient(DATABASE_URL);
+    const db = event.locals.db;
+
+  if (!db) {
+    return json({ error: 'Database connection not available' }, { status: 500 });
+  }
 
     // Query events for user's family (no RLS needed!)
     let query = db
@@ -62,7 +64,11 @@ export const POST: RequestHandler = async (event) => {
     const body = await event.request.json();
 
     // Initialize database
-    const db = createDbClient(DATABASE_URL);
+    const db = event.locals.db;
+
+  if (!db) {
+    return json({ error: 'Database connection not available' }, { status: 500 });
+  }
 
     // Insert event
     const [newEvent] = await db

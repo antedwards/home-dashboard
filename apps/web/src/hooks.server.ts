@@ -7,8 +7,24 @@
 import { createServerClient } from '@supabase/ssr';
 import type { Handle } from '@sveltejs/kit';
 import { PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_ANON_KEY } from '$env/static/public';
+import { env } from '$env/dynamic/private';
+import { createDbClient } from '@home-dashboard/database/db/client';
+import { dev } from '$app/environment';
 
 export const handle: Handle = async ({ event, resolve }) => {
+  // Initialize database connection
+  // Try Hyperdrive binding first (works in Cloudflare dev/prod), then fall back to env var
+  const connectionString =
+    event.platform?.env?.HYPERDRIVE?.connectionString ||
+    env.DATABASE_URL;
+
+  if (!connectionString) {
+    console.error('Database connection string not available. Check:');
+    console.error('- Hyperdrive binding in wrangler.toml (localConnectionString for dev)');
+    console.error('- DATABASE_URL in .env file');
+  } else {
+    event.locals.db = createDbClient(connectionString);
+  }
   // Handle CORS preflight requests for Electron app
   if (event.request.method === 'OPTIONS') {
     return new Response(null, {

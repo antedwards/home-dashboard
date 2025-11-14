@@ -5,10 +5,8 @@
 
 import { redirect, fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
-import { createDbClient } from '@home-dashboard/database/db/client';
 import { users, familyMembers, invitations } from '@home-dashboard/database/db/schema';
 import { eq } from 'drizzle-orm';
-import { DATABASE_URL } from '$env/static/private';
 
 export const load: PageServerLoad = async ({ locals }) => {
   const session = await locals.getSession?.();
@@ -18,7 +16,11 @@ export const load: PageServerLoad = async ({ locals }) => {
   }
 
   // Check if user already has a profile
-  const db = createDbClient(DATABASE_URL);
+  const db = locals.db;
+
+  if (!db) {
+    return json({ error: 'Database connection not available' }, { status: 500 });
+  }
   const [userProfile] = await db
     .select()
     .from(users)
@@ -55,7 +57,11 @@ export const actions: Actions = {
       return fail(400, { error: 'Password must be at least 6 characters' });
     }
 
-    const db = createDbClient(DATABASE_URL);
+    const db = locals.db;
+
+  if (!db) {
+    return json({ error: 'Database connection not available' }, { status: 500 });
+  }
 
     try {
       // Find the invitation for this user's email

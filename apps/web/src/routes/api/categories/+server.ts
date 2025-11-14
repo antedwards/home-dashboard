@@ -6,10 +6,8 @@
 
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { createDbClient } from '@home-dashboard/database/db/client';
 import { categories } from '@home-dashboard/database/db/schema';
 import { requireAuth } from '$lib/server/auth';
-import { DATABASE_URL } from '$env/static/private';
 
 export const POST: RequestHandler = async (event) => {
   try {
@@ -24,7 +22,11 @@ export const POST: RequestHandler = async (event) => {
     }
 
     // Initialize database
-    const db = createDbClient(DATABASE_URL);
+    const db = event.locals.db;
+
+  if (!db) {
+    return json({ error: 'Database connection not available' }, { status: 500 });
+  }
 
     // Insert category
     const [newCategory] = await db

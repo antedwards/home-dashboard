@@ -7,11 +7,9 @@
 
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { createDbClient } from '@home-dashboard/database/db/client';
 import { categories } from '@home-dashboard/database/db/schema';
 import { eq } from 'drizzle-orm';
 import { requireAuth } from '$lib/server/auth';
-import { DATABASE_URL } from '$env/static/private';
 
 export const GET: RequestHandler = async (event) => {
   try {
@@ -19,7 +17,11 @@ export const GET: RequestHandler = async (event) => {
     const { userId, familyId } = await requireAuth(event);
 
     // Initialize database
-    const db = createDbClient(DATABASE_URL);
+    const db = event.locals.db;
+
+  if (!db) {
+    return json({ error: 'Database connection not available' }, { status: 500 });
+  }
 
     // Query categories for the user's family
     const familyCategories = await db

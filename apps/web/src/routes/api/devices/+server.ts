@@ -5,16 +5,18 @@
 
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { createDbClient } from '@home-dashboard/database/db/client';
 import { deviceTokens, familyMembers } from '@home-dashboard/database/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { requireAuth } from '$lib/server/auth';
-import { DATABASE_URL } from '$env/static/private';
 
 export const GET: RequestHandler = async (event) => {
   try {
     const { userId, familyId } = await requireAuth(event);
-    const db = createDbClient(DATABASE_URL);
+    const db = event.locals.db;
+
+  if (!db) {
+    return json({ error: 'Database connection not available' }, { status: 500 });
+  }
 
     // Get all device tokens for the user's family
     const tokens = await db

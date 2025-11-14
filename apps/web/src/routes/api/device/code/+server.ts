@@ -6,10 +6,8 @@
 
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { createDbClient } from '@home-dashboard/database/db/client';
 import { deviceCodes } from '@home-dashboard/database/db/schema';
 import { eq, gt } from 'drizzle-orm';
-import { DATABASE_URL } from '$env/static/private';
 
 // Word list for generating memorable 2-word codes
 const WORD_LIST = [
@@ -42,7 +40,11 @@ export const POST: RequestHandler = async ({ request, url }) => {
       return json({ error: 'device_id is required' }, { status: 400 });
     }
 
-    const db = createDbClient(DATABASE_URL);
+    const db = event.locals.db;
+
+  if (!db) {
+    return json({ error: 'Database connection not available' }, { status: 500 });
+  }
     const deviceCode = generateDeviceCode();
     let userCode = generateUserCode();
 

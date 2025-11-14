@@ -1,9 +1,7 @@
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { createDbClient } from '@home-dashboard/database/db/client';
 import { familyMembers } from '@home-dashboard/database/db/schema';
 import { eq } from 'drizzle-orm';
-import { DATABASE_URL } from '$env/static/private';
 
 export const load: PageServerLoad = async ({ locals }) => {
   // Check if user is authenticated
@@ -15,12 +13,36 @@ export const load: PageServerLoad = async ({ locals }) => {
   }
 
   // Get user's family using Drizzle (bypasses RLS issues)
-  const db = createDbClient(DATABASE_URL);
-  const [member] = await db
-    .select()
-    .from(familyMembers)
-    .where(eq(familyMembers.userId, session.user.id))
-    .limit(1);
+  const db = locals.db;
+
+  if (!db) {
+    console.error('Database connection not available');
+    return {
+      error: 'Database connection not available',
+      userId: session.user.id,
+      familyId: null,
+    };
+  }
+  let member;
+  try {
+    [member] = await db
+      .select()
+      .from(familyMembers)
+      .where(eq(familyMembers.userId, session.user.id))
+      .limit(1);
+  } catch (error) {
+    console.error('Database query error:', error);
+    console.error('Error details:', {
+      message: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined,
+      userId: session.user.id,
+    });
+    return {
+      error: 'Database connection error. Please try again.',
+      userId: session.user.id,
+      familyId: null,
+    };
+  }
 
   if (!member) {
     console.error('Family lookup error: No family member found for user');

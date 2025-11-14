@@ -20,6 +20,7 @@
   let showEventModal = $state(false);
   let selectedEvent = $state<CalendarEvent | null>(null);
   let initialEventDate = $state<Date | undefined>(undefined);
+  let initialAllDay = $state(false);
   let initError = $state<string | null>(data.error);
 
   onMount(async () => {
@@ -36,6 +37,7 @@
 
   function handleDateClick(date: Date) {
     initialEventDate = date;
+    initialAllDay = false;
     selectedEvent = null;
     showEventModal = true;
   }
@@ -43,6 +45,7 @@
   function handleEventClick(event: CalendarEvent) {
     selectedEvent = event;
     initialEventDate = undefined;
+    initialAllDay = false;
     showEventModal = true;
   }
 
@@ -50,6 +53,14 @@
     const eventDate = new Date(date);
     eventDate.setHours(hour, 0, 0, 0);
     initialEventDate = eventDate;
+    initialAllDay = false;
+    selectedEvent = null;
+    showEventModal = true;
+  }
+
+  function handleDayHeaderClick(date: Date) {
+    initialEventDate = date;
+    initialAllDay = true;
     selectedEvent = null;
     showEventModal = true;
   }
@@ -147,7 +158,7 @@
         </button>
       </div>
 
-      <button class="btn-primary" onclick={() => { initialEventDate = new Date(); selectedEvent = null; showEventModal = true; }}>
+      <button class="btn-primary" onclick={() => { initialEventDate = new Date(); initialAllDay = false; selectedEvent = null; showEventModal = true; }}>
         + New Event
       </button>
     </div>
@@ -177,6 +188,7 @@
           events={calendarStore.events}
           onEventClick={handleEventClick}
           onTimeSlotClick={handleTimeSlotClick}
+          onDayHeaderClick={handleDayHeaderClick}
         />
       {:else if calendarStore.currentView === 'week'}
         <WeekView
@@ -185,6 +197,7 @@
           onDateClick={handleDateClick}
           onEventClick={handleEventClick}
           onTimeSlotClick={handleTimeSlotClick}
+          onDayHeaderClick={handleDayHeaderClick}
         />
       {:else if calendarStore.currentView === 'month'}
         <MonthView
@@ -193,6 +206,7 @@
           events={calendarStore.events}
           onDateClick={handleDateClick}
           onEventClick={handleEventClick}
+          onDayHeaderClick={handleDayHeaderClick}
         />
       {/if}
     {/if}
@@ -204,6 +218,7 @@
   bind:open={showEventModal}
   event={selectedEvent}
   initialDate={initialEventDate}
+  initialAllDay={initialAllDay}
   familyMembers={calendarStore.familyMembers}
   categories={calendarStore.categories}
   onClose={() => { showEventModal = false; selectedEvent = null; }}

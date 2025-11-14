@@ -6,11 +6,9 @@
 
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { createDbClient } from '@home-dashboard/database/db/client';
 import { events } from '@home-dashboard/database/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { requireAuth } from '$lib/server/auth';
-import { DATABASE_URL } from '$env/static/private';
 
 export const GET: RequestHandler = async (event) => {
   try {
@@ -18,7 +16,11 @@ export const GET: RequestHandler = async (event) => {
     const { userId, familyId } = await requireAuth(event);
     const eventId = event.params.id;
 
-    const db = createDbClient(DATABASE_URL);
+    const db = event.locals.db;
+
+  if (!db) {
+    return json({ error: 'Database connection not available' }, { status: 500 });
+  }
 
     // Query single event
     const [result] = await db
@@ -50,7 +52,11 @@ export const PUT: RequestHandler = async (event) => {
     const eventId = event.params.id;
     const body = await event.request.json();
 
-    const db = createDbClient(DATABASE_URL);
+    const db = event.locals.db;
+
+  if (!db) {
+    return json({ error: 'Database connection not available' }, { status: 500 });
+  }
 
     // Verify event belongs to user's family
     const [existing] = await db
@@ -115,7 +121,11 @@ export const DELETE: RequestHandler = async (event) => {
     const { userId, familyId } = await requireAuth(event);
     const eventId = event.params.id;
 
-    const db = createDbClient(DATABASE_URL);
+    const db = event.locals.db;
+
+  if (!db) {
+    return json({ error: 'Database connection not available' }, { status: 500 });
+  }
 
     // Verify event belongs to user's family
     const [existing] = await db
