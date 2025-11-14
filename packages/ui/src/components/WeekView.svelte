@@ -10,6 +10,7 @@
     onDateClick?: (date: Date) => void;
     onEventClick?: (event: CalendarEvent) => void;
     onTimeSlotClick?: (date: Date, hour: number) => void;
+    onDayHeaderClick?: (date: Date) => void;
   }
 
   let {
@@ -18,6 +19,7 @@
     onDateClick,
     onEventClick,
     onTimeSlotClick,
+    onDayHeaderClick,
   }: Props = $props();
 
   const week = $derived(getCurrentWeek(date));
@@ -83,8 +85,9 @@
       <button
         class="day-header"
         class:today={day.isToday}
-        onclick={() => onDateClick?.(day.date)}
+        onclick={() => onDayHeaderClick?.(day.date)}
         type="button"
+        title="Click to create an all-day event"
       >
         <div class="day-name">{getDayName(day.dayOfWeek, true)}</div>
         <div class="day-number" class:today-number={day.isToday}>

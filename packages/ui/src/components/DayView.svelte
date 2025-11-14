@@ -9,6 +9,7 @@
     events?: CalendarEvent[];
     onEventClick?: (event: CalendarEvent) => void;
     onTimeSlotClick?: (date: Date, hour: number) => void;
+    onDayHeaderClick?: (date: Date) => void;
   }
 
   let {
@@ -16,6 +17,7 @@
     events = [],
     onEventClick,
     onTimeSlotClick,
+    onDayHeaderClick,
   }: Props = $props();
 
   let timeGridContainer: HTMLDivElement;
@@ -70,7 +72,14 @@
 <div class="day-view">
   <!-- Day header -->
   <div class="day-header" class:today={isToday}>
-    <h2>{formatDate(date, 'long')}</h2>
+    <button
+      class="day-header-button"
+      onclick={() => onDayHeaderClick?.(date)}
+      type="button"
+      title="Click to create an all-day event"
+    >
+      <h2>{formatDate(date, 'long')}</h2>
+    </button>
     {#if allDayEvents.length > 0}
       <div class="all-day-section">
         <div class="all-day-label">All Day</div>
@@ -128,11 +137,26 @@
     background: #eff6ff;
   }
 
+  .day-header-button {
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    text-align: left;
+    width: 100%;
+    transition: opacity 0.2s;
+  }
+
+  .day-header-button:hover {
+    opacity: 0.7;
+  }
+
   .day-header h2 {
     margin: 0;
     font-size: 1.5rem;
     font-weight: 600;
     color: #333;
+    pointer-events: none;
   }
 
   .all-day-section {
