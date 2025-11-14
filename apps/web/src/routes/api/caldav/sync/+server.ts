@@ -64,11 +64,7 @@ async function syncEventToDatabase(connection: any, parsedEvent: ParsedEvent): P
       existingEvent.location !== parsedEvent.location ||
       existingEvent.recurrence_rule !== parsedEvent.recurrence_rule ||
       existingEvent.status !== parsedEvent.status ||
-      existingEvent.sequence !== parsedEvent.sequence ||
-      existingEvent.transparency !== parsedEvent.transparency ||
-      existingEvent.priority !== parsedEvent.priority ||
-      existingEvent.classification !== parsedEvent.classification ||
-      existingEvent.organizer !== parsedEvent.organizer;
+      existingEvent.sequence !== parsedEvent.sequence;
 
     if (needsUpdate) {
       // Update existing event
@@ -83,13 +79,8 @@ async function syncEventToDatabase(connection: any, parsedEvent: ParsedEvent): P
           all_day: parsedEvent.all_day,
           location: parsedEvent.location,
           recurrence_rule: parsedEvent.recurrence_rule,
-          // iCalendar-specific fields
           status: parsedEvent.status,
           sequence: parsedEvent.sequence,
-          transparency: parsedEvent.transparency,
-          priority: parsedEvent.priority,
-          classification: parsedEvent.classification,
-          organizer: parsedEvent.organizer,
           ical_uid: parsedEvent.ical_uid,
           ical_timestamp: parsedEvent.ical_timestamp,
           updated_at: new Date().toISOString(),
@@ -130,13 +121,8 @@ async function syncEventToDatabase(connection: any, parsedEvent: ParsedEvent): P
         all_day: parsedEvent.all_day,
         location: parsedEvent.location,
         recurrence_rule: parsedEvent.recurrence_rule,
-        // iCalendar-specific fields
         status: parsedEvent.status,
         sequence: parsedEvent.sequence,
-        transparency: parsedEvent.transparency,
-        priority: parsedEvent.priority,
-        classification: parsedEvent.classification,
-        organizer: parsedEvent.organizer,
         ical_uid: parsedEvent.ical_uid,
         ical_timestamp: parsedEvent.ical_timestamp,
       })

@@ -14,10 +14,7 @@ BEGIN
     OLD.all_day IS DISTINCT FROM NEW.all_day OR
     OLD.location IS DISTINCT FROM NEW.location OR
     OLD.recurrence_rule IS DISTINCT FROM NEW.recurrence_rule OR
-    OLD.status IS DISTINCT FROM NEW.status OR
-    OLD.transparency IS DISTINCT FROM NEW.transparency OR
-    OLD.priority IS DISTINCT FROM NEW.priority OR
-    OLD.classification IS DISTINCT FROM NEW.classification
+    OLD.status IS DISTINCT FROM NEW.status
   ) THEN
     -- Increment sequence number (for conflict detection)
     NEW.sequence := COALESCE(OLD.sequence, 0) + 1;
