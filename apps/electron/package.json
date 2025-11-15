@@ -3,6 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "description": "Home Dashboard - Desktop Application",
+  "homepage": "https://github.com/antedwards/home-dashboard",
+  "author": {
+    "name": "Ant Edwards",
+    "email": "admin@trinkettree.co.uk"
+  },
   "main": "dist-electron/main.js",
   "type": "module",
   "scripts": {
@@ -70,7 +75,8 @@
         "AppImage",
         "deb"
       ],
-      "category": "Utility"
+      "category": "Utility",
+      "maintainer": "Ant Edwards <ant@example.com>"
     }
   }
 }
