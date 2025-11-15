@@ -22,12 +22,28 @@
   let initialEventDate = $state<Date | undefined>(undefined);
   let initialAllDay = $state(false);
   let initError = $state<string | null>(data.error);
+  let showUserMenu = $state(false);
+
+  // Close dropdown when clicking outside
+  function handleClickOutside(event: MouseEvent) {
+    const target = event.target as HTMLElement;
+    if (!target.closest('.user-menu-container')) {
+      showUserMenu = false;
+    }
+  }
+
+  $effect(() => {
+    if (showUserMenu) {
+      document.addEventListener('click', handleClickOutside);
+      return () => document.removeEventListener('click', handleClickOutside);
+    }
+  });
 
   onMount(async () => {
     try {
       // Initialize calendar store with server-provided data
-      if (data.userId && data.familyId) {
-        await calendarStore.initialize(data.userId, data.familyId);
+      if (data.userId && data.householdId) {
+        await calendarStore.initialize(data.userId, data.householdId);
       }
     } catch (error) {
       console.error('Initialization error:', error);
@@ -161,6 +177,63 @@
       <button class="btn-primary" onclick={() => { initialEventDate = new Date(); initialAllDay = false; selectedEvent = null; showEventModal = true; }}>
         + New Event
       </button>
+
+      <div class="user-menu-container">
+        <button
+          class="user-button"
+          onclick={() => showUserMenu = !showUserMenu}
+          aria-label="User menu"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+            <circle cx="12" cy="7" r="4"></circle>
+          </svg>
+        </button>
+
+        {#if showUserMenu}
+          <div class="user-dropdown">
+            <div class="user-info">
+              <div class="user-email">{data.session?.email}</div>
+            </div>
+            <div class="user-actions">
+              <a href="/devices" class="menu-link">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                  <line x1="8" y1="21" x2="16" y2="21"></line>
+                  <line x1="12" y1="17" x2="12" y2="21"></line>
+                </svg>
+                Devices
+              </a>
+              <a href="/invites" class="menu-link">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
+                  <circle cx="9" cy="7" r="4"></circle>
+                  <line x1="19" y1="8" x2="19" y2="14"></line>
+                  <line x1="22" y1="11" x2="16" y2="11"></line>
+                </svg>
+                Invite Members
+              </a>
+              <a href="/settings/calendar-sync" class="menu-link">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                  <line x1="16" y1="2" x2="16" y2="6"></line>
+                  <line x1="8" y1="2" x2="8" y2="6"></line>
+                  <line x1="3" y1="10" x2="21" y2="10"></line>
+                </svg>
+                Calendar Sync
+              </a>
+              <a href="/auth/logout" class="menu-link">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                  <polyline points="16 17 21 12 16 7"></polyline>
+                  <line x1="21" y1="12" x2="9" y2="12"></line>
+                </svg>
+                Logout
+              </a>
+            </div>
+          </div>
+        {/if}
+      </div>
     </div>
   </div>
 
@@ -219,7 +292,7 @@
   event={selectedEvent}
   initialDate={initialEventDate}
   initialAllDay={initialAllDay}
-  familyMembers={calendarStore.familyMembers}
+  familyMembers={calendarStore.householdMembers}
   categories={calendarStore.categories}
   onClose={() => { showEventModal = false; selectedEvent = null; }}
   onSave={handleSaveEvent}
@@ -231,28 +304,29 @@
   .calendar-page {
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
-    height: calc(100vh - 8rem);
+    gap: 0.75rem;
+    height: calc(100vh - 3rem);
   }
 
   .page-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 2rem;
+    gap: 0.75rem;
     flex-wrap: wrap;
+    padding: 0.25rem 0;
   }
 
   .header-left h2 {
     margin: 0;
-    font-size: 2rem;
+    font-size: 1.5rem;
     font-weight: 600;
     color: #333;
   }
 
   .view-title {
-    margin-top: 0.25rem;
-    font-size: 0.875rem;
+    margin-top: 0.125rem;
+    font-size: 0.75rem;
     color: #666;
   }
 
@@ -263,15 +337,15 @@
   }
 
   .nav-btn {
-    width: 36px;
-    height: 36px;
+    width: 32px;
+    height: 32px;
     display: flex;
     align-items: center;
     justify-content: center;
     background: white;
     border: 1px solid #e0e0e0;
-    border-radius: 6px;
-    font-size: 1.5rem;
+    border-radius: 4px;
+    font-size: 1.25rem;
     cursor: pointer;
     transition: all 0.2s;
     color: #666;
@@ -283,11 +357,11 @@
   }
 
   .today-btn {
-    padding: 0.5rem 1rem;
+    padding: 0.375rem 0.75rem;
     background: white;
     border: 1px solid #e0e0e0;
-    border-radius: 6px;
-    font-size: 0.875rem;
+    border-radius: 4px;
+    font-size: 0.8125rem;
     font-weight: 500;
     cursor: pointer;
     transition: all 0.2s;
@@ -301,22 +375,22 @@
 
   .header-right {
     display: flex;
-    gap: 1rem;
+    gap: 0.5rem;
     align-items: center;
   }
 
   .view-switcher {
     display: flex;
-    gap: 0.5rem;
+    gap: 0.25rem;
   }
 
   .view-switcher button {
-    padding: 0.5rem 1rem;
+    padding: 0.375rem 0.75rem;
     border: 1px solid #e0e0e0;
     background: white;
-    border-radius: 6px;
+    border-radius: 4px;
     cursor: pointer;
-    font-size: 0.875rem;
+    font-size: 0.8125rem;
     font-weight: 500;
     color: #666;
     transition: all 0.2s;
@@ -334,15 +408,16 @@
   }
 
   .btn-primary {
-    padding: 0.5rem 1rem;
+    padding: 0.375rem 0.875rem;
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     color: white;
     border: none;
-    border-radius: 6px;
-    font-size: 0.875rem;
+    border-radius: 4px;
+    font-size: 0.8125rem;
     font-weight: 600;
     cursor: pointer;
     transition: all 0.2s;
+    white-space: nowrap;
   }
 
   .btn-primary:hover {
@@ -353,11 +428,12 @@
   .calendar-container {
     flex: 1;
     background: white;
-    border-radius: 12px;
+    border-radius: 8px;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
     overflow: hidden;
     display: flex;
     flex-direction: column;
+    min-height: 0;
   }
 
   .loading-state {
@@ -415,11 +491,21 @@
     cursor: pointer;
   }
 
+  @media (max-width: 1200px) {
+    .header-left h2 {
+      font-size: 1.25rem;
+    }
+
+    .calendar-page {
+      gap: 0.5rem;
+    }
+  }
+
   @media (max-width: 1024px) {
     .page-header {
       flex-direction: column;
       align-items: stretch;
-      gap: 1rem;
+      gap: 0.75rem;
     }
 
     .header-left,
@@ -434,21 +520,116 @@
     }
   }
 
-  @media (max-width: 640px) {
+  @media (max-width: 768px) {
     .calendar-page {
-      height: calc(100vh - 6rem);
+      gap: 0.5rem;
+      height: calc(100vh - 5rem);
     }
 
+    .header-left h2 {
+      font-size: 1.125rem;
+    }
+
+    .btn-primary {
+      font-size: 0.75rem;
+      padding: 0.375rem 0.625rem;
+    }
+  }
+
+  @media (max-width: 640px) {
     .view-switcher {
       flex: 1;
     }
 
     .view-switcher button {
       flex: 1;
+      padding: 0.375rem 0.5rem;
+      font-size: 0.75rem;
     }
 
     .btn-primary {
       width: 100%;
     }
+
+    .header-left h2 {
+      font-size: 1rem;
+    }
+  }
+
+  /* User menu styles */
+  .user-menu-container {
+    position: relative;
+  }
+
+  .user-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border: 1px solid #e0e0e0;
+    background: white;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: all 0.2s;
+    color: #666;
+  }
+
+  .user-button svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .user-button:hover {
+    background: #f5f5f5;
+    border-color: #d0d0d0;
+  }
+
+  .user-dropdown {
+    position: absolute;
+    top: calc(100% + 0.5rem);
+    right: 0;
+    background: white;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    min-width: 200px;
+    z-index: 1000;
+  }
+
+  .user-info {
+    padding: 1rem;
+    border-bottom: 1px solid #e0e0e0;
+  }
+
+  .user-email {
+    font-size: 0.875rem;
+    color: #666;
+    word-break: break-word;
+  }
+
+  .user-actions {
+    padding: 0.5rem;
+  }
+
+  .menu-link {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 1rem;
+    text-decoration: none;
+    color: #666;
+    font-size: 0.875rem;
+    border-radius: 6px;
+    transition: all 0.2s;
+  }
+
+  .menu-link:hover {
+    background: #f5f5f5;
+    color: #333;
+  }
+
+  .menu-link svg {
+    flex-shrink: 0;
   }
 </style>

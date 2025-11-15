@@ -5,7 +5,7 @@
 
 import { redirect, fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
-import { users, familyMembers, invitations } from '@home-dashboard/database/db/schema';
+import { users, householdMembers, invitations } from '@home-dashboard/database/db/schema';
 import { eq } from 'drizzle-orm';
 
 export const load: PageServerLoad = async ({ locals }) => {
@@ -97,9 +97,9 @@ export const actions: Actions = {
         color: randomColor,
       });
 
-      // Add user to family
-      await db.insert(familyMembers).values({
-        familyId: invitation.familyId,
+      // Add user to household
+      await db.insert(householdMembers).values({
+        householdId: invitation.householdId,
         userId: session.user.id,
         role: 'member',
         color: randomColor,

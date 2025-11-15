@@ -6,14 +6,15 @@
 
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { events } from '@home-dashboard/database/db/schema';
+import { events, eventAttendees, users } from '@home-dashboard/database/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { requireAuth } from '$lib/server/auth';
+import { pushEventToCalDAVIfNeeded, deleteEventFromCalDAVIfNeeded } from '$lib/server/caldav-push';
 
 export const GET: RequestHandler = async (event) => {
   try {
     // Authenticate user
-    const { userId, familyId } = await requireAuth(event);
+    const { userId, householdId } = await requireAuth(event);
     const eventId = event.params.id;
 
     const db = event.locals.db;
@@ -23,20 +24,44 @@ export const GET: RequestHandler = async (event) => {
   }
 
     // Query single event
-    const [result] = await db
+    const [eventResult] = await db
       .select()
       .from(events)
       .where(
         and(
           eq(events.id, eventId),
-          eq(events.familyId, familyId)
+          eq(events.householdId, householdId)
         )
       )
       .limit(1);
 
-    if (!result) {
+    if (!eventResult) {
       return json({ error: 'Event not found' }, { status: 404 });
     }
+
+    // Get attendees for this event
+    const attendeesData = await db
+      .select({
+        userId: users.id,
+        name: users.name,
+        email: users.email,
+        avatar: users.avatarUrl,
+        color: users.color,
+      })
+      .from(eventAttendees)
+      .innerJoin(users, eq(eventAttendees.userId, users.id))
+      .where(eq(eventAttendees.eventId, eventId));
+
+    const result = {
+      ...eventResult,
+      attendees: attendeesData.map(a => ({
+        id: a.userId,
+        name: a.name,
+        email: a.email,
+        avatar: a.avatar,
+        color: a.color,
+      })),
+    };
 
     return json(result);
   } catch (error: any) {
@@ -48,7 +73,7 @@ export const GET: RequestHandler = async (event) => {
 export const PUT: RequestHandler = async (event) => {
   try {
     // Authenticate user
-    const { userId, familyId } = await requireAuth(event);
+    const { userId, householdId } = await requireAuth(event);
     const eventId = event.params.id;
     const body = await event.request.json();
 
@@ -58,14 +83,14 @@ export const PUT: RequestHandler = async (event) => {
     return json({ error: 'Database connection not available' }, { status: 500 });
   }
 
-    // Verify event belongs to user's family
+    // Verify event belongs to user's household
     const [existing] = await db
       .select()
       .from(events)
       .where(
         and(
           eq(events.id, eventId),
-          eq(events.familyId, familyId)
+          eq(events.householdId, householdId)
         )
       )
       .limit(1);
@@ -92,8 +117,6 @@ export const PUT: RequestHandler = async (event) => {
 
     // Update event attendees if provided
     if (body.attendee_ids !== undefined) {
-      const { eventAttendees } = await import('@home-dashboard/database/db/schema');
-
       // Delete existing attendees
       await db.delete(eventAttendees).where(eq(eventAttendees.eventId, eventId));
 
@@ -108,7 +131,36 @@ export const PUT: RequestHandler = async (event) => {
       }
     }
 
-    return json(updated);
+    // Get updated attendees
+    const attendeesData = await db
+      .select({
+        userId: users.id,
+        name: users.name,
+        email: users.email,
+        avatar: users.avatarUrl,
+        color: users.color,
+      })
+      .from(eventAttendees)
+      .innerJoin(users, eq(eventAttendees.userId, users.id))
+      .where(eq(eventAttendees.eventId, eventId));
+
+    const result = {
+      ...updated,
+      attendees: attendeesData.map(a => ({
+        id: a.userId,
+        name: a.name,
+        email: a.email,
+        avatar: a.avatar,
+        color: a.color,
+      })),
+    };
+
+    // Push to CalDAV if category is synced (don't await - do it in background)
+    pushEventToCalDAVIfNeeded(db, updated).catch(err => {
+      console.error('Background CalDAV push failed:', err);
+    });
+
+    return json(result);
   } catch (error: any) {
     console.error('Error updating event:', error);
     return json({ error: error.message || 'Failed to update event' }, { status: error.status || 500 });
@@ -118,7 +170,7 @@ export const PUT: RequestHandler = async (event) => {
 export const DELETE: RequestHandler = async (event) => {
   try {
     // Authenticate user
-    const { userId, familyId } = await requireAuth(event);
+    const { userId, householdId } = await requireAuth(event);
     const eventId = event.params.id;
 
     const db = event.locals.db;
@@ -127,14 +179,14 @@ export const DELETE: RequestHandler = async (event) => {
     return json({ error: 'Database connection not available' }, { status: 500 });
   }
 
-    // Verify event belongs to user's family
+    // Verify event belongs to user's household
     const [existing] = await db
       .select()
       .from(events)
       .where(
         and(
           eq(events.id, eventId),
-          eq(events.familyId, familyId)
+          eq(events.householdId, householdId)
         )
       )
       .limit(1);
@@ -143,7 +195,10 @@ export const DELETE: RequestHandler = async (event) => {
       return json({ error: 'Event not found' }, { status: 404 });
     }
 
-    // Delete event
+    // Delete from CalDAV first (if synced)
+    await deleteEventFromCalDAVIfNeeded(db, existing);
+
+    // Delete event from database
     await db
       .delete(events)
       .where(eq(events.id, eventId));

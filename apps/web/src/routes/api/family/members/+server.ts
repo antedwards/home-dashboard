@@ -7,14 +7,14 @@
 
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { familyMembers, users } from '@home-dashboard/database/db/schema';
+import { householdMembers, users } from '@home-dashboard/database/db/schema';
 import { eq } from 'drizzle-orm';
 import { requireAuth } from '$lib/server/auth';
 
 export const GET: RequestHandler = async (event) => {
   try {
     // Authenticate user
-    const { userId, familyId } = await requireAuth(event);
+    const { userId, householdId } = await requireAuth(event);
 
     // Initialize database
     const db = event.locals.db;
@@ -23,7 +23,7 @@ export const GET: RequestHandler = async (event) => {
     return json({ error: 'Database connection not available' }, { status: 500 });
   }
 
-    // Query family members with user details (use authenticated user's familyId)
+    // Query household members with user details (use authenticated user's householdId)
     const members = await db
       .select({
         id: users.id,
@@ -32,9 +32,9 @@ export const GET: RequestHandler = async (event) => {
         avatar_url: users.avatarUrl,
         color: users.color,
       })
-      .from(familyMembers)
-      .innerJoin(users, eq(familyMembers.userId, users.id))
-      .where(eq(familyMembers.familyId, familyId));
+      .from(householdMembers)
+      .innerJoin(users, eq(householdMembers.userId, users.id))
+      .where(eq(householdMembers.householdId, householdId));
 
     return json(members);
   } catch (error: any) {

@@ -6,6 +6,7 @@ This guide shows how to create the project from scratch with the same architectu
 
 If you want to use the current implementation:
 
+
 ```bash
 git clone <your-repo>
 cd home-dashboard

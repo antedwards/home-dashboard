@@ -6,7 +6,7 @@
 
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { deviceCodes, deviceTokens, familyMembers } from '@home-dashboard/database/db/schema';
+import { deviceCodes, deviceTokens, householdMembers } from '@home-dashboard/database/db/schema';
 import { eq, and, gt } from 'drizzle-orm';
 import { requireAuth } from '$lib/server/auth';
 
@@ -40,7 +40,7 @@ export const POST: RequestHandler = async (event) => {
     }
 
     // Authenticate user (must be logged in via session)
-    const { userId, familyId } = await requireAuth(event);
+    const { userId, householdId } = await requireAuth(event);
 
     const db = event.locals.db;
 
@@ -84,13 +84,13 @@ export const POST: RequestHandler = async (event) => {
         )
       );
 
-    // Create device token with family_id for the wall-mounted family screen
+    // Create device token with household_id for the wall-mounted household screen
     await db.insert(deviceTokens).values({
       userId,
       deviceId: deviceCodeData.deviceId,
       deviceName: deviceCodeData.deviceName || 'Electron Device',
       deviceType: 'electron',
-      familyId,
+      householdId,
       tokenHash: accessTokenHash,
       refreshTokenHash: refreshTokenHash,
       expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days

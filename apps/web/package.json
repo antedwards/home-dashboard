@@ -17,7 +17,10 @@
     "@supabase/ssr": "^0.7.0",
     "@supabase/supabase-js": "^2.49.1",
     "drizzle-orm": "^0.44.7",
-    "postgres": "^3.4.7"
+    "ical.js": "^2.2.1",
+    "node-ical": "^0.22.1",
+    "postgres": "^3.4.7",
+    "tsdav": "^2.1.6"
   },
   "devDependencies": {
     "@sveltejs/adapter-auto": "^3.3.1",

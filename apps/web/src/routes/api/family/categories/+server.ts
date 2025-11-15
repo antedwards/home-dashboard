@@ -14,7 +14,7 @@ import { requireAuth } from '$lib/server/auth';
 export const GET: RequestHandler = async (event) => {
   try {
     // Authenticate user
-    const { userId, familyId } = await requireAuth(event);
+    const { userId, householdId } = await requireAuth(event);
 
     // Initialize database
     const db = event.locals.db;
@@ -23,13 +23,13 @@ export const GET: RequestHandler = async (event) => {
     return json({ error: 'Database connection not available' }, { status: 500 });
   }
 
-    // Query categories for the user's family
-    const familyCategories = await db
+    // Query categories for the user's household
+    const householdCategories = await db
       .select()
       .from(categories)
-      .where(eq(categories.familyId, familyId));
+      .where(eq(categories.householdId, householdId));
 
-    return json(familyCategories);
+    return json(householdCategories);
   } catch (error: any) {
     console.error('Error fetching categories:', error);
     return json({ error: error.message || 'Failed to fetch categories' }, { status: error.status || 500 });

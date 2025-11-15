@@ -6,7 +6,7 @@
 
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { deviceCodes, deviceTokens, familyMembers } from '@home-dashboard/database/db/schema';
+import { deviceCodes, deviceTokens, householdMembers } from '@home-dashboard/database/db/schema';
 import { eq, and } from 'drizzle-orm';
 
 async function sha256Hash(text: string): Promise<string> {
@@ -76,11 +76,11 @@ export const POST: RequestHandler = async ({ request }) => {
         .delete(deviceCodes)
         .where(eq(deviceCodes.id, deviceCodeData.id));
 
-      // Get family_id for the user
+      // Get household_id for the user
       const [member] = await db
         .select()
-        .from(familyMembers)
-        .where(eq(familyMembers.userId, deviceCodeData.userId))
+        .from(householdMembers)
+        .where(eq(householdMembers.userId, deviceCodeData.userId))
         .limit(1);
 
       return json({
@@ -88,7 +88,7 @@ export const POST: RequestHandler = async ({ request }) => {
         refresh_token: deviceCodeData.refreshToken,
         expires_in: 30 * 24 * 60 * 60, // 30 days in seconds
         user_id: deviceCodeData.userId,
-        family_id: member?.familyId,
+        household_id: member?.householdId,
       });
 
     } else if (grant_type === 'refresh_token') {
@@ -140,11 +140,11 @@ export const POST: RequestHandler = async ({ request }) => {
         })
         .where(eq(deviceTokens.id, deviceToken.id));
 
-      // Get family_id for the user
+      // Get household_id for the user
       const [member] = await db
         .select()
-        .from(familyMembers)
-        .where(eq(familyMembers.userId, deviceToken.userId))
+        .from(householdMembers)
+        .where(eq(householdMembers.userId, deviceToken.userId))
         .limit(1);
 
       return json({
@@ -152,7 +152,7 @@ export const POST: RequestHandler = async ({ request }) => {
         refresh_token: newRefreshToken,
         expires_in: 30 * 24 * 60 * 60,
         user_id: deviceToken.userId,
-        family_id: member?.familyId,
+        household_id: member?.householdId,
       });
 
     } else {
