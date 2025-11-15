@@ -32,7 +32,7 @@ jobs:
       - name: Build Electron app
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          UPDATE_SERVER_URL: ${{ secrets.UPDATE_SERVER_URL }}
+          UPDATE_SERVER_URL: ${{ vars.UPDATE_SERVER_URL }}
         run: |
           cd apps/electron
           pnpm build --linux --arm64
@@ -84,7 +84,7 @@ jobs:
 
       - name: Upload files to Supabase Storage
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           cat > upload.js << 'EOF'
