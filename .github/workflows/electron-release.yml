@@ -77,8 +77,8 @@ jobs:
         with:
           path: ./artifacts
 
-      - name: Install Supabase CLI
-        run: npm install -g @supabase/supabase-js
+      - name: Install Supabase SDK
+        run: npm install @supabase/supabase-js
 
       - name: Upload files to Supabase Storage
         env:
