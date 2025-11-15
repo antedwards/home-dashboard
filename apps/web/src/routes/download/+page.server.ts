@@ -3,9 +3,15 @@ import { createClient } from '@supabase/supabase-js';
 import { env } from '$env/dynamic/private';
 
 export const load: PageServerLoad = async () => {
+	// Check if Supabase credentials are available
+	if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) {
+		console.warn('Supabase credentials not configured for download page');
+		return { releases: [] };
+	}
+
 	const supabase = createClient(
-		env.SUPABASE_URL || '',
-		env.SUPABASE_SERVICE_ROLE_KEY || ''
+		env.SUPABASE_URL,
+		env.SUPABASE_SERVICE_ROLE_KEY
 	);
 
 	try {
