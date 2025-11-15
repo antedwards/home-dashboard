@@ -76,7 +76,9 @@
         "deb"
       ],
       "category": "Utility",
-      "maintainer": "Ant Edwards <ant@example.com>"
+      "maintainer": "Ant Edwards <admin@trinkettree.co.uk>",
+      "executableName": "home-dashboard",
+      "artifactName": "home-dashboard-${version}-${arch}.${ext}"
     }
   }
 }
