@@ -236,6 +236,9 @@ async function syncEventToDatabase(
             organizerName: parsedEvent.organizer_name,
             externalAttendees: parsedEvent.attendees || [],
             updatedAt: new Date(),
+            // Mark as already synced to prevent pushing back to CalDAV
+            lastPushAt: new Date(),
+            lastPushStatus: 'success',
           })
           .where(eq(events.id, existingEvent.id));
 
@@ -300,6 +303,9 @@ async function syncEventToDatabase(
         organizerEmail: parsedEvent.organizer_email,
         organizerName: parsedEvent.organizer_name,
         externalAttendees: parsedEvent.attendees || [],
+        // Mark as already synced to prevent pushing back to CalDAV
+        lastPushAt: new Date(),
+        lastPushStatus: 'success',
       })
       .returning();
 
