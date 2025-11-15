@@ -6,6 +6,8 @@
     calculateEventPosition,
   } from '../utils/calendar';
   import type { CalendarEvent } from '../types';
+  import AvatarGroup from './AvatarGroup.svelte';
+  import { getEventBackgroundColor, getEventBorderColor } from '../utils/event-styles';
 
   interface Props {
     columns: Array<{
@@ -38,12 +40,22 @@
     column: number;
     totalColumns: number;
     position: { top: number; height: number };
+    isLongEvent: boolean;
+  }
+
+  function isLongEvent(event: CalendarEvent): boolean {
+    const start = new Date(event.start);
+    const end = new Date(event.end);
+    const durationHours = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
+
+    // Consider events over 6 hours as "long"
+    return durationHours >= 6;
   }
 
   // Calculate layout for overlapping events in a column
   function getEventsWithLayoutForColumn(columnEvents: CalendarEvent[]): EventLayout[] {
     const layouts: EventLayout[] = [];
-    const timedEvents = columnEvents.filter(e => !e.all_day);
+    const timedEvents = columnEvents.filter(e => !e.allDay);
     const sorted = [...timedEvents].sort((a, b) =>
       new Date(a.start).getTime() - new Date(b.start).getTime()
     );
@@ -101,7 +113,8 @@
           event,
           column: columnIndex,
           totalColumns: Math.min(eventColumns.length, maxVisibleEvents),
-          position: calculateEventPosition(new Date(event.start), new Date(event.end))
+          position: calculateEventPosition(new Date(event.start), new Date(event.end)),
+          isLongEvent: isLongEvent(event)
         });
       }
     }
@@ -135,10 +148,48 @@
     const start = new Date(event.start);
     const end = new Date(event.end);
 
-    if (event.all_day) {
+    if (event.allDay) {
       return 'All day';
     }
 
+    // Check if this is a middle day of a multi-day event (midnight to end of day)
+    const isFullDaySegment =
+      start.getHours() === 0 &&
+      start.getMinutes() === 0 &&
+      end.getHours() === 23 &&
+      end.getMinutes() === 59;
+
+    if (isFullDaySegment) {
+      return ''; // Don't show time for middle days
+    }
+
+    // Check if this is the start of a multi-day event (ends at 11:59 PM)
+    const isStartDay =
+      end.getHours() === 23 &&
+      end.getMinutes() === 59 &&
+      (start.getHours() !== 0 || start.getMinutes() !== 0);
+
+    if (isStartDay) {
+      return start.toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+      });
+    }
+
+    // Check if this is the end of a multi-day event (starts at midnight)
+    const isEndDay =
+      start.getHours() === 0 &&
+      start.getMinutes() === 0 &&
+      (end.getHours() !== 23 || end.getMinutes() !== 59);
+
+    if (isEndDay) {
+      return end.toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+      });
+    }
+
+    // Single day event - show both times
     const startTime = start.toLocaleTimeString('en-US', {
       hour: 'numeric',
       minute: '2-digit',
@@ -186,10 +237,12 @@
           {@const shouldShowOverflow = layout.column === maxVisibleEvents - 1 && hiddenCount > 0}
 
           {#if isVisible}
+            {@const eventTime = formatEventTime(layout.event)}
             <button
               class="event-block timed-event"
               style="
-                background-color: #3b82f6;
+                border-left-color: {getEventBorderColor(layout.event.color)};
+                background-color: {getEventBackgroundColor(layout.event.color)};
                 top: {layout.position.top}px;
                 height: {layout.position.height}px;
                 min-height: {Math.max(layout.position.height, 20)}px;
@@ -202,11 +255,16 @@
             >
               <div class="event-content">
                 <div class="event-title">{layout.event.title}</div>
-                {#if layout.position.height > 30}
-                  <div class="event-time">{formatEventTime(layout.event)}</div>
+                {#if layout.position.height > 30 && eventTime}
+                  <div class="event-time">{eventTime}</div>
                 {/if}
                 {#if layout.event.location && layout.position.height > 45}
                   <div class="event-location">📍 {layout.event.location}</div>
+                {/if}
+                {#if layout.event.attendees && layout.event.attendees.length > 0 && layout.position.height > 60}
+                  <div class="event-attendees">
+                    <AvatarGroup users={layout.event.attendees} max={3} size="xs" />
+                  </div>
                 {/if}
               </div>
             </button>
@@ -246,9 +304,10 @@
       </div>
       <div class="modal-body">
         {#each overflowEvents as event}
+          {@const modalEventTime = formatEventTime(event)}
           <button
             class="modal-event"
-            style="border-left: 4px solid #3b82f6;"
+            style="border-left: 4px solid {event.color || '#3b82f6'};"
             onclick={() => {
               showOverflowModal = false;
               if (onEventClick) onEventClick(event);
@@ -256,9 +315,16 @@
             type="button"
           >
             <div class="modal-event-title">{event.title}</div>
-            <div class="modal-event-time">{formatEventTime(event)}</div>
+            {#if modalEventTime}
+              <div class="modal-event-time">{modalEventTime}</div>
+            {/if}
             {#if event.location}
               <div class="modal-event-location">📍 {event.location}</div>
+            {/if}
+            {#if event.attendees && event.attendees.length > 0}
+              <div class="modal-event-attendees">
+                <AvatarGroup users={event.attendees} max={5} size="sm" />
+              </div>
             {/if}
             {#if event.description}
               <div class="modal-event-description">{event.description}</div>
@@ -340,20 +406,22 @@
     pointer-events: auto;
     border-radius: 4px;
     padding: 0.25rem 0.5rem;
-    color: white;
+    color: #333;
     font-size: 0.75rem;
     cursor: pointer;
     border: none;
+    border-left: 4px solid;
     text-align: left;
     overflow: hidden;
-    transition: opacity 0.2s, transform 0.2s;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    transition: filter 0.2s, transform 0.2s;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
   }
 
   .event-block:hover {
-    opacity: 0.9;
+    filter: brightness(1.1);
     transform: scale(1.02);
     z-index: 10;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
   }
 
   .timed-event {
@@ -408,15 +476,23 @@
 
   .event-time {
     font-size: 0.65rem;
-    opacity: 0.9;
+    color: #666;
   }
 
   .event-location {
     font-size: 0.65rem;
-    opacity: 0.9;
+    color: #666;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .event-attendees {
+    margin-top: 0.25rem;
+  }
+
+  .modal-event-attendees {
+    margin-top: 0.5rem;
   }
 
   /* Modal styles */

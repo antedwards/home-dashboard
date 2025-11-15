@@ -5,13 +5,13 @@
 
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { deviceTokens, familyMembers } from '@home-dashboard/database/db/schema';
+import { deviceTokens, householdMembers } from '@home-dashboard/database/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { requireAuth } from '$lib/server/auth';
 
 export const DELETE: RequestHandler = async (event) => {
   try {
-    const { userId, familyId } = await requireAuth(event);
+    const { userId, householdId } = await requireAuth(event);
     const tokenId = event.params.id;
     const db = event.locals.db;
 
@@ -19,15 +19,15 @@ export const DELETE: RequestHandler = async (event) => {
     return json({ error: 'Database connection not available' }, { status: 500 });
   }
 
-    // Verify token belongs to user's family
+    // Verify token belongs to user's household
     const [token] = await db
       .select()
       .from(deviceTokens)
-      .innerJoin(familyMembers, eq(deviceTokens.userId, familyMembers.userId))
+      .innerJoin(householdMembers, eq(deviceTokens.userId, householdMembers.userId))
       .where(
         and(
           eq(deviceTokens.id, tokenId),
-          eq(familyMembers.familyId, familyId)
+          eq(householdMembers.householdId, householdId)
         )
       )
       .limit(1);
@@ -48,7 +48,7 @@ export const DELETE: RequestHandler = async (event) => {
 
 export const PATCH: RequestHandler = async (event) => {
   try {
-    const { userId, familyId } = await requireAuth(event);
+    const { userId, householdId } = await requireAuth(event);
     const tokenId = event.params.id;
     const body = await event.request.json();
     const db = event.locals.db;
@@ -57,15 +57,15 @@ export const PATCH: RequestHandler = async (event) => {
     return json({ error: 'Database connection not available' }, { status: 500 });
   }
 
-    // Verify token belongs to user's family
+    // Verify token belongs to user's household
     const [token] = await db
       .select()
       .from(deviceTokens)
-      .innerJoin(familyMembers, eq(deviceTokens.userId, familyMembers.userId))
+      .innerJoin(householdMembers, eq(deviceTokens.userId, householdMembers.userId))
       .where(
         and(
           eq(deviceTokens.id, tokenId),
-          eq(familyMembers.familyId, familyId)
+          eq(householdMembers.householdId, householdId)
         )
       )
       .limit(1);

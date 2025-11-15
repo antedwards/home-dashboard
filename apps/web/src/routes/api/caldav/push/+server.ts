@@ -1,24 +1,27 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { createClient } from '@supabase/supabase-js';
-import { PUBLIC_SUPABASE_URL } from '$env/static/public';
-import { SUPABASE_SERVICE_ROLE_KEY } from '$env/static/private';
 import { createDAVClient } from 'tsdav';
 import { eventToICalendar } from '$lib/caldav/ical-parser';
 import { decryptPassword } from '$lib/server/crypto';
-
-const supabase = createClient(PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+import { caldavConnections, caldavEventMappings, events } from '@home-dashboard/database/db/schema';
+import { eq, and, gte, lte } from 'drizzle-orm';
+import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 /**
  * Push a local event to CalDAV server
  */
-async function pushEventToCalDAV(connection: any, event: any, mapping?: any): Promise<void> {
+async function pushEventToCalDAV(
+  db: PostgresJsDatabase,
+  connection: any,
+  event: any,
+  mapping?: any
+): Promise<void> {
   // Decrypt password
-  const decryptedPassword = await decryptPassword(connection.password_encrypted);
+  const decryptedPassword = await decryptPassword(connection.passwordEncrypted);
 
   // Create DAV client
   const client = await createDAVClient({
-    serverUrl: connection.server_url,
+    serverUrl: connection.serverUrl,
     credentials: {
       username: connection.email,
       password: decryptedPassword,
@@ -38,16 +41,16 @@ async function pushEventToCalDAV(connection: any, event: any, mapping?: any): Pr
 
   // Use the first calendar (or specified calendar from mapping)
   let targetCalendar = calendars[0];
-  if (mapping?.external_calendar) {
-    const foundCalendar = calendars.find(cal => cal.displayName === mapping.external_calendar);
+  if (mapping?.externalCalendar) {
+    const foundCalendar = calendars.find((cal) => cal.displayName === mapping.externalCalendar);
     if (foundCalendar) targetCalendar = foundCalendar;
   }
 
   // Generate URL for the event
-  const eventFileName = `${event.ical_uid || event.id}.ics`;
-  const eventUrl = mapping?.external_url || `${targetCalendar.url}/${eventFileName}`;
+  const eventFileName = `${event.icalUid || event.id}.ics`;
+  const eventUrl = mapping?.externalUrl || `${targetCalendar.url}/${eventFileName}`;
 
-  if (mapping && mapping.external_url) {
+  if (mapping && mapping.externalUrl) {
     // Update existing event
     await client.updateCalendarObject({
       calendarObject: {
@@ -68,93 +71,104 @@ async function pushEventToCalDAV(connection: any, event: any, mapping?: any): Pr
 
     // Create or update mapping
     if (mapping) {
-      await supabase
-        .from('caldav_event_mappings')
-        .update({
-          external_url: result.url || eventUrl,
-          external_calendar: targetCalendar.displayName || 'Calendar',
+      await db
+        .update(caldavEventMappings)
+        .set({
+          externalUrl: result.url || eventUrl,
+          externalCalendar: targetCalendar.displayName || 'Calendar',
           etag: result.etag || null,
-          sync_direction: 'bidirectional',
-          last_synced_at: new Date().toISOString(),
+          syncDirection: 'bidirectional',
+          lastSyncedAt: new Date(),
         })
-        .eq('id', mapping.id);
+        .where(eq(caldavEventMappings.id, mapping.id));
     } else {
-      await supabase
-        .from('caldav_event_mappings')
-        .insert({
-          event_id: event.id,
-          caldav_connection_id: connection.id,
-          external_uid: event.ical_uid || event.id,
-          external_calendar: targetCalendar.displayName || 'Calendar',
-          external_url: result.url || eventUrl,
-          etag: result.etag || null,
-          sync_direction: 'export',
-          last_synced_at: new Date().toISOString(),
-        });
+      await db.insert(caldavEventMappings).values({
+        eventId: event.id,
+        caldavConnectionId: connection.id,
+        externalUid: event.icalUid || event.id,
+        externalCalendar: targetCalendar.displayName || 'Calendar',
+        externalUrl: result.url || eventUrl,
+        etag: result.etag || null,
+        syncDirection: 'export',
+        lastSyncedAt: new Date(),
+      });
     }
   }
 
   // Increment sequence number
-  await supabase
-    .from('events')
-    .update({
-      sequence: (event.sequence || 0) + 1,
-      ical_timestamp: new Date().toISOString(),
+  const currentSequence = parseInt(event.sequence || '0', 10);
+  await db
+    .update(events)
+    .set({
+      sequence: (currentSequence + 1).toString(),
+      icalTimestamp: new Date(),
     })
-    .eq('id', event.id);
+    .where(eq(events.id, event.id));
 }
 
-export const POST: RequestHandler = async ({ request, cookies }) => {
+export const POST: RequestHandler = async ({ request, locals }) => {
   try {
     const { connectionId, eventId } = await request.json();
 
-    // Get user from session
-    const sessionCookie = cookies.get('sb-access-token');
-    if (!sessionCookie) {
+    const session = await locals.getSession();
+    if (!session) {
       return json({ error: 'Not authenticated' }, { status: 401 });
     }
 
-    // Get user
-    const { data: { user }, error: userError } = await supabase.auth.getUser(sessionCookie);
-    if (userError || !user) {
-      return json({ error: 'Invalid session' }, { status: 401 });
+    if (!locals.db) {
+      return json({ error: 'Database connection not available' }, { status: 500 });
     }
 
-    // Get connection
-    const { data: connection, error: connectionError } = await supabase
-      .from('caldav_connections')
-      .select('*')
-      .eq('id', connectionId)
-      .eq('user_id', user.id)
-      .eq('enabled', true)
-      .single();
+    const db = locals.db;
 
-    if (connectionError || !connection) {
+    // Get connection
+    const connections = await db
+      .select()
+      .from(caldavConnections)
+      .where(
+        and(
+          eq(caldavConnections.id, connectionId),
+          eq(caldavConnections.userId, session.user.id),
+          eq(caldavConnections.enabled, true)
+        )
+      )
+      .limit(1);
+
+    const connection = connections[0];
+
+    if (!connection) {
       return json({ error: 'Connection not found' }, { status: 404 });
     }
 
     if (eventId) {
       // Push single event
-      const { data: event, error: eventError } = await supabase
-        .from('events')
-        .select('*')
-        .eq('id', eventId)
-        .eq('family_id', connection.family_id)
-        .single();
+      const eventsList = await db
+        .select()
+        .from(events)
+        .where(and(eq(events.id, eventId), eq(events.householdId, connection.householdId)))
+        .limit(1);
 
-      if (eventError || !event) {
+      const event = eventsList[0];
+
+      if (!event) {
         return json({ error: 'Event not found' }, { status: 404 });
       }
 
       // Get existing mapping if any
-      const { data: mapping } = await supabase
-        .from('caldav_event_mappings')
-        .select('*')
-        .eq('event_id', eventId)
-        .eq('caldav_connection_id', connectionId)
-        .single();
+      const mappings = await db
+        .select()
+        .from(caldavEventMappings)
+        .where(
+          and(
+            eq(caldavEventMappings.eventId, eventId),
+            eq(caldavEventMappings.caldavConnectionId, connectionId)
+          )
+        )
+        .limit(1);
 
-      await pushEventToCalDAV(connection, event, mapping);
+      const mapping = mappings[0];
+
+      await pushEventToCalDAV(db, connection, event, mapping);
 
       return json({
         success: true,
@@ -162,38 +176,52 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
       });
     } else {
       // Push all unsynced events for this connection
-      const { data: events, error: eventsError } = await supabase
-        .from('events')
-        .select(`
-          *,
-          caldav_event_mappings!left(*)
-        `)
-        .eq('family_id', connection.family_id)
-        .gte('start_time', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()) // Last 30 days
-        .lte('start_time', new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString()); // Next 365 days
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      const oneYearFromNow = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
 
-      if (eventsError) throw eventsError;
+      const eventsList = await db
+        .select()
+        .from(events)
+        .where(
+          and(
+            eq(events.householdId, connection.householdId),
+            gte(events.startTime, thirtyDaysAgo),
+            lte(events.startTime, oneYearFromNow)
+          )
+        );
 
       let pushedCount = 0;
       let errorCount = 0;
 
-      for (const event of events || []) {
+      for (const event of eventsList) {
         try {
-          // Find mapping for this connection
-          const mappings = (event as any).caldav_event_mappings || [];
-          const mapping = mappings.find((m: any) => m.caldav_connection_id === connectionId);
+          // Get mapping for this connection
+          const mappings = await db
+            .select()
+            .from(caldavEventMappings)
+            .where(
+              and(
+                eq(caldavEventMappings.eventId, event.id),
+                eq(caldavEventMappings.caldavConnectionId, connectionId)
+              )
+            )
+            .limit(1);
+
+          const mapping = mappings[0];
 
           // Only push if:
           // 1. No mapping exists (new local event)
           // 2. Event was updated after last sync (check updated_at vs last_synced_at)
           const shouldPush =
             !mapping ||
-            mapping.sync_direction === 'import' ||
-            (mapping.sync_direction === 'bidirectional' &&
-              new Date(event.updated_at) > new Date(mapping.last_synced_at));
+            mapping.syncDirection === 'import' ||
+            (mapping.syncDirection === 'bidirectional' &&
+              event.updatedAt &&
+              mapping.lastSyncedAt &&
+              new Date(event.updatedAt) > new Date(mapping.lastSyncedAt));
 
           if (shouldPush) {
-            await pushEventToCalDAV(connection, event, mapping);
+            await pushEventToCalDAV(db, connection, event, mapping);
             pushedCount++;
           }
         } catch (err) {

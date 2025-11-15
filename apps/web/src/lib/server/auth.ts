@@ -6,7 +6,7 @@
 
 import type { RequestEvent } from '@sveltejs/kit';
 import { error } from '@sveltejs/kit';
-import { deviceTokens, familyMembers } from '@home-dashboard/database/db/schema';
+import { deviceTokens, householdMembers } from '@home-dashboard/database/db/schema';
 import { eq, and, gt } from 'drizzle-orm';
 
 async function hashToken(token: string): Promise<string> {
@@ -26,7 +26,7 @@ async function hashToken(token: string): Promise<string> {
  */
 export async function getAuthUser(event: RequestEvent): Promise<{
   userId: string;
-  familyId: string;
+  householdId: string;
   authType: 'device' | 'session';
 }> {
   if (!event.locals.db) {
@@ -59,11 +59,11 @@ export async function getAuthUser(event: RequestEvent): Promise<{
         .set({ lastUsedAt: new Date() })
         .where(eq(deviceTokens.id, deviceToken.id));
 
-      // Use family_id directly from token (no JOIN needed!)
-      if (deviceToken.familyId) {
+      // Use household_id directly from token (no JOIN needed!)
+      if (deviceToken.householdId) {
         return {
           userId: deviceToken.userId,
-          familyId: deviceToken.familyId,
+          householdId: deviceToken.householdId,
           authType: 'device',
         };
       }
@@ -80,17 +80,17 @@ export async function getAuthUser(event: RequestEvent): Promise<{
     const session = await event.locals.getSession();
 
     if (session?.user?.id) {
-      // Get family from family_members
+      // Get household from household_members
       const [member] = await db
         .select()
-        .from(familyMembers)
-        .where(eq(familyMembers.userId, session.user.id))
+        .from(householdMembers)
+        .where(eq(householdMembers.userId, session.user.id))
         .limit(1);
 
       if (member) {
         return {
           userId: session.user.id,
-          familyId: member.familyId,
+          householdId: member.householdId,
           authType: 'session',
         };
       }

@@ -6,7 +6,7 @@
 
 export interface Event {
   id: string;
-  family_id: string;
+  household_id: string;
   user_id: string;
   title: string;
   description?: string | null;
@@ -33,7 +33,7 @@ export interface User {
 
 export interface Category {
   id: string;
-  family_id: string;
+  household_id: string;
   name: string;
   color: string;
   created_at: Date | string;
@@ -123,20 +123,20 @@ class ApiClient {
   }
 
   /**
-   * Get family members (for authenticated user's family)
+   * Get household members (for authenticated user's household)
    */
-  async getFamilyMembers(familyId: string): Promise<User[]> {
-    // Note: familyId parameter kept for backward compatibility but not used in URL
-    // The endpoint uses the authenticated user's family from their session
+  async getHouseholdMembers(householdId: string): Promise<User[]> {
+    // Note: householdId parameter kept for backward compatibility but not used in URL
+    // The endpoint uses the authenticated user's household from their session
     return this.request<User[]>('/api/family/members');
   }
 
   /**
-   * Get categories for a family (for authenticated user's family)
+   * Get categories for a household (for authenticated user's household)
    */
-  async getCategories(familyId: string): Promise<Category[]> {
-    // Note: familyId parameter kept for backward compatibility but not used in URL
-    // The endpoint uses the authenticated user's family from their session
+  async getCategories(householdId: string): Promise<Category[]> {
+    // Note: householdId parameter kept for backward compatibility but not used in URL
+    // The endpoint uses the authenticated user's household from their session
     return this.request<Category[]>('/api/family/categories');
   }
 
@@ -144,7 +144,7 @@ class ApiClient {
    * Create a new category
    */
   async createCategory(data: {
-    family_id: string;
+    household_id: string;
     name: string;
     color: string;
   }): Promise<Category> {

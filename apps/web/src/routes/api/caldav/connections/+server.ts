@@ -1,65 +1,73 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { createClient } from '@supabase/supabase-js';
-import { PUBLIC_SUPABASE_URL } from '$env/static/public';
-import { SUPABASE_SERVICE_ROLE_KEY } from '$env/static/private';
 import { encryptPassword } from '$lib/server/crypto';
-
-const supabase = createClient(PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+import { caldavConnections, householdMembers } from '@home-dashboard/database/db/schema';
+import { eq } from 'drizzle-orm';
 
 /**
  * Create a new CalDAV connection with encrypted password
  */
-export const POST: RequestHandler = async ({ request, cookies }) => {
+export const POST: RequestHandler = async ({ request, locals }) => {
   try {
-    const { email, password, serverUrl, displayName } = await request.json();
+    const {
+      email,
+      password,
+      serverUrl,
+      displayName,
+      selectedCalendars = [],
+      syncPastDays = 30,
+      syncFutureDays = 365
+    } = await request.json();
 
     if (!email || !password || !serverUrl) {
       return json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    // Get user from session
-    const sessionCookie = cookies.get('sb-access-token');
-    if (!sessionCookie) {
+    const session = await locals.getSession();
+    if (!session) {
       return json({ error: 'Not authenticated' }, { status: 401 });
     }
 
-    const { data: { user }, error: userError } = await supabase.auth.getUser(sessionCookie);
-    if (userError || !user) {
-      return json({ error: 'Invalid session' }, { status: 401 });
+    if (!locals.db) {
+      return json({ error: 'Database connection not available' }, { status: 500 });
     }
 
-    // Get user's family
-    const { data: profile } = await supabase
-      .from('user_profiles')
-      .select('family_id')
-      .eq('id', user.id)
-      .single();
+    // Get user's household using direct database connection
+    const householdMemberships = await locals.db
+      .select()
+      .from(householdMembers)
+      .where(eq(householdMembers.userId, session.user.id))
+      .limit(1);
 
-    if (!profile?.family_id) {
-      return json({ error: 'No family found' }, { status: 400 });
+    if (!householdMemberships || householdMemberships.length === 0) {
+      return json({ error: 'No household found' }, { status: 400 });
     }
+
+    const householdId = householdMemberships[0].householdId;
 
     // Encrypt password
     const encryptedPassword = await encryptPassword(password);
 
-    // Save connection
-    const { data: connection, error: insertError } = await supabase
-      .from('caldav_connections')
-      .insert({
-        user_id: user.id,
-        family_id: profile.family_id,
-        email,
-        password_encrypted: encryptedPassword,
-        server_url: serverUrl,
-        display_name: displayName || email,
-        enabled: true,
-        last_sync_status: 'pending',
-      })
-      .select()
-      .single();
+    console.log(`[CalDAV Connections] Saving connection with ${selectedCalendars.length} selected calendars:`,
+      selectedCalendars.map((cal: any) => ({ name: cal.name, enabled: cal.enabled })));
 
-    if (insertError) throw insertError;
+    // Save connection using direct database connection
+    const [connection] = await locals.db
+      .insert(caldavConnections)
+      .values({
+        userId: session.user.id,
+        householdId: householdId,
+        email,
+        passwordEncrypted: encryptedPassword,
+        serverUrl: serverUrl,
+        displayName: displayName || email,
+        enabled: true,
+        lastSyncStatus: 'pending',
+        selectedCalendars: selectedCalendars,
+        syncPastDays: syncPastDays.toString(),
+        syncFutureDays: syncFutureDays.toString(),
+      })
+      .returning();
 
     return json({ success: true, connection });
   } catch (error: any) {

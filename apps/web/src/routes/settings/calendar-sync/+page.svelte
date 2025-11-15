@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { supabase } from '$lib/supabase';
+  import { invalidateAll } from '$app/navigation';
+  import type { PageData } from './$types';
+  import CalendarSyncModal from '$lib/components/CalendarSyncModal.svelte';
 
   interface CalDAVConnection {
     id: string;
@@ -11,12 +12,41 @@
     last_sync_at: string | null;
     last_sync_status: string | null;
     last_sync_error: string | null;
+    selected_calendars: any[];
+    sync_past_days: string;
+    sync_future_days: string;
   }
 
-  let connections = $state<CalDAVConnection[]>([]);
-  let loading = $state(true);
+  interface Category {
+    id: string;
+    name: string;
+    color: string;
+    visibility: 'household' | 'private' | 'shared';
+    owner_id: string;
+    is_owner: boolean;
+  }
+
+  interface FailedEvent {
+    id: string;
+    title: string;
+    start_time: string | null;
+    end_time: string | null;
+    category_id: string | null;
+    category_name: string;
+    last_push_at: string | null;
+    last_push_error: string | null;
+  }
+
+  let { data }: { data: PageData } = $props();
+
+  let connections = $state<CalDAVConnection[]>(data.connections);
+  let categories = $state<Category[]>(data.categories || []);
+  let failedEvents = $state<FailedEvent[]>(data.failedEvents || []);
+  let loading = $state(false);
   let error = $state('');
   let showAddForm = $state(false);
+  let showSyncModal = $state(false);
+  let editingConnection = $state<CalDAVConnection | null>(null);
 
   // Form state
   let formEmail = $state('');
@@ -25,30 +55,12 @@
   let formSubmitting = $state(false);
   let formError = $state('');
 
-  onMount(async () => {
-    await loadConnections();
+  // Update connections, categories, and failed events when data changes
+  $effect(() => {
+    connections = data.connections;
+    categories = data.categories || [];
+    failedEvents = data.failedEvents || [];
   });
-
-  async function loadConnections() {
-    loading = true;
-    error = '';
-
-    try {
-      const { data, error: fetchError } = await supabase
-        .from('caldav_connections')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (fetchError) throw fetchError;
-
-      connections = data || [];
-    } catch (err: any) {
-      error = err.message || 'Failed to load calendar connections';
-      console.error('Failed to load connections:', err);
-    } finally {
-      loading = false;
-    }
-  }
 
   function getServerUrl(provider: 'icloud' | 'google'): string {
     return provider === 'icloud'
@@ -121,8 +133,8 @@
       formSubmitting = false;
       showAddForm = false;
 
-      // Reload connections
-      await loadConnections();
+      // Reload connections from server
+      await invalidateAll();
 
       // Trigger initial sync
       await triggerSync();
@@ -147,7 +159,7 @@
       }
 
       // Reload connections to see updated status
-      await loadConnections();
+      await invalidateAll();
     } catch (err: any) {
       console.error('Sync failed:', err);
       error = err.message || 'Failed to sync calendars';
@@ -156,14 +168,21 @@
 
   async function toggleConnection(connection: CalDAVConnection) {
     try {
-      const { error: updateError } = await supabase
-        .from('caldav_connections')
-        .update({ enabled: !connection.enabled })
-        .eq('id', connection.id);
+      const response = await fetch('/api/caldav/connections/toggle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          connectionId: connection.id,
+          enabled: !connection.enabled,
+        }),
+      });
 
-      if (updateError) throw updateError;
+      if (!response.ok) {
+        const result = await response.json();
+        throw new Error(result.error || 'Failed to toggle connection');
+      }
 
-      await loadConnections();
+      await invalidateAll();
     } catch (err: any) {
       error = err.message || 'Failed to toggle connection';
       console.error('Failed to toggle connection:', err);
@@ -176,14 +195,18 @@
     }
 
     try {
-      const { error: deleteError } = await supabase
-        .from('caldav_connections')
-        .delete()
-        .eq('id', connection.id);
+      const response = await fetch('/api/caldav/connections/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ connectionId: connection.id }),
+      });
 
-      if (deleteError) throw deleteError;
+      if (!response.ok) {
+        const result = await response.json();
+        throw new Error(result.error || 'Failed to delete connection');
+      }
 
-      await loadConnections();
+      await invalidateAll();
     } catch (err: any) {
       error = err.message || 'Failed to delete connection';
       console.error('Failed to delete connection:', err);
@@ -225,6 +248,165 @@
       default: return '#6b7280';
     }
   }
+
+  async function updateCategoryVisibility(categoryId: string, visibility: 'household' | 'private' | 'shared') {
+    try {
+      const response = await fetch('/api/categories', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          category_id: categoryId,
+          visibility,
+        }),
+      });
+
+      if (!response.ok) {
+        const result = await response.json();
+        throw new Error(result.error || 'Failed to update calendar visibility');
+      }
+
+      await invalidateAll();
+    } catch (err: any) {
+      error = err.message || 'Failed to update calendar visibility';
+      console.error('Failed to update calendar visibility:', err);
+    }
+  }
+
+  async function updateCategoryColor(categoryId: string, color: string) {
+    // Optimistic update: update UI immediately
+    const categoryIndex = categories.findIndex(cat => cat.id === categoryId);
+    if (categoryIndex === -1) return;
+
+    const originalColor = categories[categoryIndex].color;
+    categories[categoryIndex].color = color;
+
+    try {
+      const response = await fetch('/api/categories', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          category_id: categoryId,
+          color,
+        }),
+      });
+
+      if (!response.ok) {
+        const result = await response.json();
+        throw new Error(result.error || 'Failed to update calendar color');
+      }
+
+      // Success - refresh to ensure consistency
+      await invalidateAll();
+    } catch (err: any) {
+      // Rollback on failure
+      categories[categoryIndex].color = originalColor;
+      error = err.message || 'Failed to update calendar color';
+      console.error('Failed to update calendar color:', err);
+    }
+  }
+
+  function getVisibilityLabel(visibility: string): string {
+    switch (visibility) {
+      case 'household': return '👨‍👩‍👧‍👦 Household';
+      case 'private': return '🔒 Private';
+      case 'shared': return '🔗 Shared';
+      default: return visibility;
+    }
+  }
+
+  function getVisibilityDescription(visibility: string): string {
+    switch (visibility) {
+      case 'household': return 'Visible to all household members';
+      case 'private': return 'Only visible to you';
+      case 'shared': return 'Shared with specific users';
+      default: return '';
+    }
+  }
+
+  async function deleteCategory(categoryId: string, categoryName: string) {
+    if (!confirm(`Delete calendar "${categoryName}"? This will not delete events, only the calendar category.`)) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/categories/${categoryId}`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) {
+        const result = await response.json();
+        throw new Error(result.error || 'Failed to delete category');
+      }
+
+      await invalidateAll();
+    } catch (err: any) {
+      error = err.message || 'Failed to delete category';
+      console.error('Failed to delete category:', err);
+    }
+  }
+
+  function manageCalendars(connection: CalDAVConnection) {
+    editingConnection = connection;
+    showSyncModal = true;
+  }
+
+  async function retryFailedEvent(eventId: string) {
+    try {
+      const response = await fetch('/api/caldav/retry-push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ eventId }),
+      });
+
+      if (!response.ok) {
+        const result = await response.json();
+        throw new Error(result.error || 'Failed to retry event push');
+      }
+
+      // Reload to see updated status
+      await invalidateAll();
+    } catch (err: any) {
+      error = err.message || 'Failed to retry event push';
+      console.error('Failed to retry event push:', err);
+    }
+  }
+
+  async function retryAllFailedEvents() {
+    if (!confirm(`Retry pushing all ${failedEvents.length} failed events to CalDAV?`)) {
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/caldav/retry-push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ retryAll: true }),
+      });
+
+      if (!response.ok) {
+        const result = await response.json();
+        throw new Error(result.error || 'Failed to retry events');
+      }
+
+      // Reload to see updated status
+      await invalidateAll();
+    } catch (err: any) {
+      error = err.message || 'Failed to retry events';
+      console.error('Failed to retry events:', err);
+    }
+  }
+
+  function formatEventTime(timestamp: string | null): string {
+    if (!timestamp) return '';
+
+    const date = new Date(timestamp);
+    return date.toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+  }
 </script>
 
 <div class="container">
@@ -252,19 +434,17 @@
       <section class="section">
         <div class="section-header">
           <h2>Connected Calendars</h2>
-          {#if !showAddForm}
-            <button class="btn btn-primary" onclick={() => (showAddForm = true)}>
-              + Add Calendar
-            </button>
-          {/if}
+          <button class="btn btn-primary" onclick={() => (showSyncModal = true)}>
+            + Add Calendar
+          </button>
         </div>
 
-        {#if connections.length === 0 && !showAddForm}
+        {#if connections.length === 0}
           <div class="empty-state">
             <div class="empty-icon">📅</div>
             <h3>No calendars connected</h3>
             <p>Connect your iCloud or Google Calendar to sync events automatically</p>
-            <button class="btn btn-primary" onclick={() => (showAddForm = true)}>
+            <button class="btn btn-primary" onclick={() => (showSyncModal = true)}>
               Connect Calendar
             </button>
           </div>
@@ -415,6 +595,13 @@
                   <div class="connection-actions">
                     <button
                       class="btn btn-icon"
+                      title="Manage calendars"
+                      onclick={() => manageCalendars(connection)}
+                    >
+                      ⚙
+                    </button>
+                    <button
+                      class="btn btn-icon"
                       title={connection.enabled ? 'Pause sync' : 'Resume sync'}
                       onclick={() => toggleConnection(connection)}
                     >
@@ -461,6 +648,121 @@
         {/if}
       </section>
 
+      <!-- Synced Calendars -->
+      {#if categories.length > 0}
+        <section class="section">
+          <div class="section-header">
+            <h2>Synced Calendars</h2>
+            <p class="section-subtitle">Manage which calendars are visible to your household</p>
+          </div>
+
+          <div class="calendars-grid">
+            {#each categories as category (category.id)}
+              <div class="calendar-card">
+                <div class="calendar-color" style="background-color: {category.color}"></div>
+                <div class="calendar-info">
+                  <h3 class="calendar-name">{category.name}</h3>
+                  {#if category.is_owner}
+                    <div class="visibility-control">
+                      <label for="visibility-{category.id}" class="visibility-label">
+                        Visibility:
+                      </label>
+                      <select
+                        id="visibility-{category.id}"
+                        class="visibility-select"
+                        value={category.visibility}
+                        onchange={(e) => updateCategoryVisibility(category.id, e.currentTarget.value as any)}
+                      >
+                        <option value="household">👨‍👩‍👧‍👦 Household</option>
+                        <option value="private">🔒 Private</option>
+                        <option value="shared">🔗 Shared</option>
+                      </select>
+                      <p class="visibility-description">
+                        {getVisibilityDescription(category.visibility)}
+                      </p>
+
+                      <label for="color-{category.id}" class="visibility-label" style="margin-top: 0.75rem;">
+                        Color:
+                      </label>
+                      <div class="color-picker">
+                        <input
+                          id="color-{category.id}"
+                          type="color"
+                          value={category.color}
+                          class="color-input"
+                          oninput={(e) => updateCategoryColor(category.id, e.currentTarget.value)}
+                        />
+                        <span class="color-value">{category.color}</span>
+                      </div>
+                    </div>
+                  {:else}
+                    <p class="calendar-visibility">
+                      {getVisibilityLabel(category.visibility)}
+                    </p>
+                  {/if}
+                </div>
+                {#if category.is_owner}
+                  <button
+                    class="btn btn-icon btn-danger"
+                    title="Delete calendar"
+                    onclick={() => deleteCategory(category.id, category.name)}
+                  >
+                    🗑
+                  </button>
+                {/if}
+              </div>
+            {/each}
+          </div>
+        </section>
+      {/if}
+
+      <!-- Failed Event Pushes -->
+      {#if failedEvents.length > 0}
+        <section class="section">
+          <div class="section-header">
+            <div>
+              <h2>Failed Syncs</h2>
+              <p class="section-subtitle">Events that failed to push to CalDAV</p>
+            </div>
+            <button class="btn btn-primary" onclick={retryAllFailedEvents}>
+              ⟳ Retry All ({failedEvents.length})
+            </button>
+          </div>
+
+          <div class="failed-events-list">
+            {#each failedEvents as event (event.id)}
+              <div class="failed-event-card">
+                <div class="failed-event-info">
+                  <div class="failed-event-header">
+                    <h3 class="failed-event-title">{event.title}</h3>
+                    <span class="failed-event-calendar">{event.category_name}</span>
+                  </div>
+                  <div class="failed-event-time">
+                    {formatEventTime(event.start_time)}
+                  </div>
+                  <div class="failed-event-error">
+                    <span class="error-icon">⚠</span>
+                    <span class="error-message">{event.last_push_error || 'Unknown error'}</span>
+                  </div>
+                  {#if event.last_push_at}
+                    <div class="failed-event-timestamp">
+                      Last attempt: {formatLastSync(event.last_push_at)}
+                    </div>
+                  {/if}
+                </div>
+                <button
+                  class="btn btn-icon"
+                  title="Retry push"
+                  onclick={() => retryFailedEvent(event.id)}
+                >
+                  ⟳
+                </button>
+              </div>
+            {/each}
+          </div>
+        </section>
+      {/if}
+
       <!-- Sync Settings -->
       <section class="section">
         <h2>Sync Settings</h2>
@@ -482,6 +784,16 @@
     </div>
   {/if}
 </div>
+
+<!-- Multi-step sync modal -->
+<CalendarSyncModal
+  bind:show={showSyncModal}
+  connection={editingConnection}
+  onClose={() => {
+    showSyncModal = false;
+    editingConnection = null;
+  }}
+/>
 
 <style>
   .container {
@@ -853,6 +1165,129 @@
     font-size: 1rem;
   }
 
+  /* Calendars Grid */
+  .calendars-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1rem;
+  }
+
+  .calendar-card {
+    display: flex;
+    gap: 1rem;
+    padding: 1rem;
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    transition: all 0.2s;
+  }
+
+  .calendar-card:hover {
+    border-color: #d1d5db;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  }
+
+  .calendar-color {
+    width: 4px;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+
+  .calendar-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .calendar-name {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #111827;
+    margin: 0 0 0.75rem 0;
+  }
+
+  .visibility-control {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .visibility-label {
+    font-size: 0.875rem;
+    color: #6b7280;
+    font-weight: 500;
+  }
+
+  .visibility-select {
+    padding: 0.5rem 0.75rem;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    background: white;
+    font-size: 0.875rem;
+    color: #111827;
+    cursor: pointer;
+    transition: border-color 0.2s;
+  }
+
+  .visibility-select:hover {
+    border-color: #9ca3af;
+  }
+
+  .visibility-select:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  }
+
+  .visibility-description {
+    font-size: 0.75rem;
+    color: #6b7280;
+    margin: 0;
+    font-style: italic;
+  }
+
+  .color-picker {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .color-input {
+    width: 60px;
+    height: 40px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: border-color 0.2s;
+  }
+
+  .color-input:hover {
+    border-color: #9ca3af;
+  }
+
+  .color-input:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  }
+
+  .color-value {
+    font-size: 0.875rem;
+    color: #6b7280;
+    font-family: monospace;
+  }
+
+  .calendar-visibility {
+    font-size: 0.875rem;
+    color: #6b7280;
+    margin: 0;
+  }
+
+  .section-subtitle {
+    color: #6b7280;
+    font-size: 0.875rem;
+    margin: 0.5rem 0 0 0;
+  }
+
   .form-actions {
     display: flex;
     gap: 0.75rem;
@@ -947,5 +1382,83 @@
     font-size: 0.875rem;
     color: #6b7280;
     margin: 0;
+  }
+
+  /* Failed Events */
+  .failed-events-list {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .failed-event-card {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 1rem;
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    border-radius: 8px;
+  }
+
+  .failed-event-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .failed-event-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .failed-event-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #991b1b;
+    margin: 0;
+  }
+
+  .failed-event-calendar {
+    font-size: 0.75rem;
+    padding: 0.25rem 0.5rem;
+    background: #fee2e2;
+    border-radius: 4px;
+    color: #991b1b;
+  }
+
+  .failed-event-time {
+    font-size: 0.875rem;
+    color: #dc2626;
+    margin-bottom: 0.5rem;
+  }
+
+  .failed-event-error {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    background: white;
+    border-radius: 4px;
+    margin-bottom: 0.25rem;
+  }
+
+  .error-icon {
+    color: #dc2626;
+    font-size: 1rem;
+    flex-shrink: 0;
+  }
+
+  .error-message {
+    font-size: 0.875rem;
+    color: #991b1b;
+    line-height: 1.5;
+  }
+
+  .failed-event-timestamp {
+    font-size: 0.75rem;
+    color: #b91c1c;
+    margin-top: 0.25rem;
   }
 </style>

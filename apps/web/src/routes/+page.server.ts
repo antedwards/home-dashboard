@@ -1,6 +1,6 @@
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { familyMembers } from '@home-dashboard/database/db/schema';
+import { householdMembers } from '@home-dashboard/database/db/schema';
 import { eq } from 'drizzle-orm';
 
 export const load: PageServerLoad = async ({ locals }) => {
@@ -12,7 +12,7 @@ export const load: PageServerLoad = async ({ locals }) => {
     throw redirect(303, '/auth/login');
   }
 
-  // Get user's family using Drizzle (bypasses RLS issues)
+  // Get user's household using Drizzle (bypasses RLS issues)
   const db = locals.db;
 
   if (!db) {
@@ -20,15 +20,18 @@ export const load: PageServerLoad = async ({ locals }) => {
     return {
       error: 'Database connection not available',
       userId: session.user.id,
-      familyId: null,
+      householdId: null,
+      session: {
+        email: session.user.email || '',
+      },
     };
   }
   let member;
   try {
     [member] = await db
       .select()
-      .from(familyMembers)
-      .where(eq(familyMembers.userId, session.user.id))
+      .from(householdMembers)
+      .where(eq(householdMembers.userId, session.user.id))
       .limit(1);
   } catch (error) {
     console.error('Database query error:', error);
@@ -40,22 +43,31 @@ export const load: PageServerLoad = async ({ locals }) => {
     return {
       error: 'Database connection error. Please try again.',
       userId: session.user.id,
-      familyId: null,
+      householdId: null,
+      session: {
+        email: session.user.email || '',
+      },
     };
   }
 
   if (!member) {
-    console.error('Family lookup error: No family member found for user');
+    console.error('Household lookup error: No household member found for user');
     return {
-      error: 'Could not find your family. Please contact support.',
+      error: 'Could not find your household. Please contact support.',
       userId: session.user.id,
-      familyId: null,
+      householdId: null,
+      session: {
+        email: session.user.email || '',
+      },
     };
   }
 
   return {
     userId: session.user.id,
-    familyId: member.familyId,
+    householdId: member.householdId,
     error: null,
+    session: {
+      email: session.user.email || '',
+    },
   };
 };

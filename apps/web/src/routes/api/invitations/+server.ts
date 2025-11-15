@@ -24,7 +24,7 @@ function generateToken(): string {
 export const GET: RequestHandler = async (event) => {
   try {
     // Authenticate user
-    const { userId, familyId } = await requireAuth(event);
+    const { userId, householdId } = await requireAuth(event);
 
     // Initialize database
     const db = event.locals.db;
@@ -33,13 +33,13 @@ export const GET: RequestHandler = async (event) => {
     return json({ error: 'Database connection not available' }, { status: 500 });
   }
 
-    // Get all pending invitations for the user's family
-    const familyInvitations = await db
+    // Get all pending invitations for the user's household
+    const householdInvitations = await db
       .select()
       .from(invitations)
-      .where(eq(invitations.familyId, familyId));
+      .where(eq(invitations.householdId, householdId));
 
-    return json(familyInvitations);
+    return json(householdInvitations);
   } catch (error: any) {
     console.error('Error fetching invitations:', error);
     return json({ error: error.message || 'Failed to fetch invitations' }, { status: error.status || 500 });
@@ -49,7 +49,7 @@ export const GET: RequestHandler = async (event) => {
 export const POST: RequestHandler = async (event) => {
   try {
     // Authenticate user
-    const { userId, familyId } = await requireAuth(event);
+    const { userId, householdId } = await requireAuth(event);
 
     const body = await event.request.json();
     const { email } = body;
@@ -105,7 +105,7 @@ export const POST: RequestHandler = async (event) => {
       .insert(invitations)
       .values({
         email: email.toLowerCase(),
-        familyId,
+        householdId,
         invitedBy: userId,
         token,
         expiresAt,
@@ -127,7 +127,7 @@ export const POST: RequestHandler = async (event) => {
         redirectTo: `${PUBLIC_APP_URL}/auth/complete-profile`,
         data: {
           invitation_token: token,
-          family_id: familyId,
+          household_id: householdId,
         }
       });
 

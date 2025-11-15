@@ -87,7 +87,10 @@ export function generateCalendarMonth(year: number, month: number): CalendarMont
   const previousYear = month === 0 ? year - 1 : year;
   const daysInPreviousMonth = getDaysInMonth(previousYear, previousMonth);
 
-  for (let i = firstDay - 1; i >= 0; i--) {
+  // Adjust firstDay to treat Monday as 0 (Sunday is 0 in JS, so Sunday becomes 6)
+  const firstDayAdjusted = firstDay === 0 ? 6 : firstDay - 1;
+
+  for (let i = firstDayAdjusted - 1; i >= 0; i--) {
     const day = daysInPreviousMonth - i;
     const date = new Date(previousYear, previousMonth, day);
     currentWeek.push({
@@ -110,8 +113,8 @@ export function generateCalendarMonth(year: number, month: number): CalendarMont
       dayOfWeek: date.getDay(),
     });
 
-    // Start a new week on Sunday
-    if (date.getDay() === 6 || day === daysInMonth) {
+    // Start a new week on Monday (day 0 = Sunday, so end week on Sunday which is 0)
+    if (date.getDay() === 0 || day === daysInMonth) {
       weeks.push({
         weekNumber: getWeekNumber(date),
         days: [...currentWeek],
@@ -154,19 +157,21 @@ export function generateCalendarMonth(year: number, month: number): CalendarMont
 }
 
 /**
- * Get the current week (Sunday - Saturday)
+ * Get the current week (Monday - Sunday)
  */
 export function getCurrentWeek(date: Date = new Date()): CalendarDay[] {
   const dayOfWeek = date.getDay();
-  const sunday = new Date(date);
-  sunday.setDate(date.getDate() - dayOfWeek);
+  // Adjust so Monday is 0, Sunday is 6
+  const dayOfWeekAdjusted = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+  const monday = new Date(date);
+  monday.setDate(date.getDate() - dayOfWeekAdjusted);
 
   const week: CalendarDay[] = [];
   const today = new Date();
 
   for (let i = 0; i < 7; i++) {
-    const current = new Date(sunday);
-    current.setDate(sunday.getDate() + i);
+    const current = new Date(monday);
+    current.setDate(monday.getDate() + i);
     week.push({
       date: current,
       isToday: isSameDay(current, today),
@@ -205,19 +210,27 @@ export function formatTime24Hour(hour: number): string {
 
 /**
  * Get day name
+ * @param dayOfWeek - 0 = Monday, 1 = Tuesday, ..., 6 = Sunday (for display purposes)
+ *                    Can also accept JS day (0 = Sunday) if useJSDay is true
  */
-export function getDayName(dayOfWeek: number, short: boolean = false): string {
+export function getDayName(dayOfWeek: number, short: boolean = false, useJSDay: boolean = false): string {
   const days = [
-    'Sunday',
     'Monday',
     'Tuesday',
     'Wednesday',
     'Thursday',
     'Friday',
     'Saturday',
+    'Sunday',
   ];
-  const shortDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  return short ? shortDays[dayOfWeek] : days[dayOfWeek];
+  const shortDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+  // If using JS day (0 = Sunday), convert to our format (0 = Monday)
+  const adjustedDay = useJSDay
+    ? (dayOfWeek === 0 ? 6 : dayOfWeek - 1)
+    : dayOfWeek;
+
+  return short ? shortDays[adjustedDay] : days[adjustedDay];
 }
 
 /**

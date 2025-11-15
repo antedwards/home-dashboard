@@ -1,5 +1,11 @@
 import ICAL from 'ical.js';
 
+export interface ParsedAttendee {
+  email: string;
+  name: string | null;
+  partstat: 'needs-action' | 'accepted' | 'declined' | 'tentative' | 'delegated';
+}
+
 export interface ParsedEvent {
   external_uid: string;
   title: string;
@@ -17,6 +23,10 @@ export interface ParsedEvent {
   sequence: number;
   ical_uid: string;
   ical_timestamp: string | null;
+  // Organizer and attendees
+  organizer_email: string | null;
+  organizer_name: string | null;
+  attendees: ParsedAttendee[];
 }
 
 /**
@@ -71,6 +81,41 @@ export function parseICalendarData(icsData: string, calendarName: string, calend
       const dtstampProp = vevent.getFirstPropertyValue('dtstamp');
       const icalTimestamp = dtstampProp ? dtstampProp.toJSDate().toISOString() : null;
 
+      // Extract organizer
+      let organizerEmail: string | null = null;
+      let organizerName: string | null = null;
+      const organizerProp = vevent.getFirstProperty('organizer');
+      if (organizerProp) {
+        const organizerValue = organizerProp.getFirstValue();
+        // Organizer value is typically "mailto:email@example.com"
+        if (organizerValue && typeof organizerValue === 'string') {
+          organizerEmail = organizerValue.replace('mailto:', '').toLowerCase();
+        }
+        // Get CN (Common Name) parameter
+        const cnParam = organizerProp.getParameter('cn');
+        if (cnParam) {
+          organizerName = cnParam;
+        }
+      }
+
+      // Extract attendees
+      const attendees: ParsedAttendee[] = [];
+      const attendeeProps = vevent.getAllProperties('attendee');
+      for (const attendeeProp of attendeeProps) {
+        const attendeeValue = attendeeProp.getFirstValue();
+        if (attendeeValue && typeof attendeeValue === 'string') {
+          const email = attendeeValue.replace('mailto:', '').toLowerCase();
+          const name = attendeeProp.getParameter('cn') || null;
+          const partstat = (attendeeProp.getParameter('partstat') || 'needs-action').toLowerCase();
+
+          attendees.push({
+            email,
+            name,
+            partstat: partstat as ParsedAttendee['partstat'],
+          });
+        }
+      }
+
       events.push({
         external_uid: uid,
         title: summary,
@@ -87,6 +132,9 @@ export function parseICalendarData(icsData: string, calendarName: string, calend
         sequence,
         ical_uid: uid,
         ical_timestamp: icalTimestamp,
+        organizer_email: organizerEmail,
+        organizer_name: organizerName,
+        attendees,
       });
     }
 
@@ -126,16 +174,21 @@ export function eventToICalendar(event: any): string {
     vevent.addPropertyWithValue('location', event.location);
   }
 
-  // Add start/end times
-  const startTime = ICAL.Time.fromJSDate(new Date(event.start_time), event.all_day);
-  const endTime = ICAL.Time.fromJSDate(new Date(event.end_time), event.all_day);
+  // Add start/end times (support both camelCase and snake_case)
+  const startTimeValue = event.startTime || event.start_time;
+  const endTimeValue = event.endTime || event.end_time;
+  const allDayValue = event.allDay !== undefined ? event.allDay : event.all_day;
+
+  const startTime = ICAL.Time.fromJSDate(new Date(startTimeValue), allDayValue);
+  const endTime = ICAL.Time.fromJSDate(new Date(endTimeValue), allDayValue);
 
   vevent.addPropertyWithValue('dtstart', startTime);
   vevent.addPropertyWithValue('dtend', endTime);
 
-  // Add recurrence rule if present
-  if (event.recurrence_rule) {
-    vevent.addPropertyWithValue('rrule', ICAL.Recur.fromString(event.recurrence_rule));
+  // Add recurrence rule if present (support both camelCase and snake_case)
+  const recurrenceRule = event.recurrenceRule || event.recurrence_rule;
+  if (recurrenceRule) {
+    vevent.addPropertyWithValue('rrule', ICAL.Recur.fromString(recurrenceRule));
   }
 
   // Add essential iCalendar fields for sync
@@ -147,18 +200,21 @@ export function eventToICalendar(event: any): string {
     vevent.addPropertyWithValue('sequence', event.sequence);
   }
 
-  // Add timestamps
-  const dtstamp = event.ical_timestamp
-    ? ICAL.Time.fromJSDate(new Date(event.ical_timestamp))
+  // Add timestamps (support both camelCase and snake_case)
+  const icalTimestamp = event.icalTimestamp || event.ical_timestamp;
+  const dtstamp = icalTimestamp
+    ? ICAL.Time.fromJSDate(new Date(icalTimestamp))
     : ICAL.Time.now();
   vevent.addPropertyWithValue('dtstamp', dtstamp);
 
-  if (event.created_at) {
-    vevent.addPropertyWithValue('created', ICAL.Time.fromJSDate(new Date(event.created_at)));
+  const createdAt = event.createdAt || event.created_at;
+  if (createdAt) {
+    vevent.addPropertyWithValue('created', ICAL.Time.fromJSDate(new Date(createdAt)));
   }
 
-  if (event.updated_at) {
-    vevent.addPropertyWithValue('last-modified', ICAL.Time.fromJSDate(new Date(event.updated_at)));
+  const updatedAt = event.updatedAt || event.updated_at;
+  if (updatedAt) {
+    vevent.addPropertyWithValue('last-modified', ICAL.Time.fromJSDate(new Date(updatedAt)));
   }
 
   // Add event to calendar

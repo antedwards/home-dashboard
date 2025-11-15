@@ -5,7 +5,7 @@
 
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { invitations, users, familyMembers } from '@home-dashboard/database/db/schema';
+import { invitations, users, householdMembers } from '@home-dashboard/database/db/schema';
 import { eq } from 'drizzle-orm';
 
 export const GET: RequestHandler = async (event) => {
@@ -47,7 +47,7 @@ export const GET: RequestHandler = async (event) => {
     // Return invitation details (without sensitive info)
     return json({
       email: invitation.email,
-      familyId: invitation.familyId,
+      householdId: invitation.householdId,
       expiresAt: invitation.expiresAt,
     });
   } catch (error: any) {
@@ -129,9 +129,9 @@ export const POST: RequestHandler = async (event) => {
       color: randomColor,
     });
 
-    // Add user to family
-    await db.insert(familyMembers).values({
-      familyId: invitation.familyId,
+    // Add user to household
+    await db.insert(householdMembers).values({
+      householdId: invitation.householdId,
       userId: authData.user.id,
       role: 'member',
       color: randomColor,

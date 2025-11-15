@@ -1,23 +1,20 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { createClient } from '@supabase/supabase-js';
-import { PUBLIC_SUPABASE_URL } from '$env/static/public';
-import { SUPABASE_SERVICE_ROLE_KEY } from '$env/static/private';
 import { createDAVClient } from 'tsdav';
 import { decryptPassword } from '$lib/server/crypto';
-
-const supabase = createClient(PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+import { caldavConnections, caldavEventMappings, events } from '@home-dashboard/database/db/schema';
+import { eq } from 'drizzle-orm';
 
 /**
  * Delete an event from CalDAV server
  */
 async function deleteEventFromCalDAV(connection: any, mapping: any): Promise<void> {
   // Decrypt password
-  const decryptedPassword = await decryptPassword(connection.password_encrypted);
+  const decryptedPassword = await decryptPassword(connection.passwordEncrypted);
 
   // Create DAV client
   const client = await createDAVClient({
-    serverUrl: connection.server_url,
+    serverUrl: connection.serverUrl,
     credentials: {
       username: connection.email,
       password: decryptedPassword,
@@ -29,15 +26,15 @@ async function deleteEventFromCalDAV(connection: any, mapping: any): Promise<voi
   // Delete the calendar object
   await client.deleteCalendarObject({
     calendarObject: {
-      url: mapping.external_url,
+      url: mapping.externalUrl,
       etag: mapping.etag || undefined,
     },
   });
 
-  console.log(`[CalDAV Delete] Deleted event from CalDAV: ${mapping.external_uid}`);
+  console.log(`[CalDAV Delete] Deleted event from CalDAV: ${mapping.externalUid}`);
 }
 
-export const POST: RequestHandler = async ({ request, cookies }) => {
+export const POST: RequestHandler = async ({ request, locals }) => {
   try {
     const { eventId } = await request.json();
 
@@ -45,55 +42,58 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
       return json({ error: 'Event ID required' }, { status: 400 });
     }
 
-    // Get user from session
-    const sessionCookie = cookies.get('sb-access-token');
-    if (!sessionCookie) {
+    const session = await locals.getSession();
+    if (!session) {
       return json({ error: 'Not authenticated' }, { status: 401 });
     }
 
-    // Get user
-    const { data: { user }, error: userError } = await supabase.auth.getUser(sessionCookie);
-    if (userError || !user) {
-      return json({ error: 'Invalid session' }, { status: 401 });
+    if (!locals.db) {
+      return json({ error: 'Database connection not available' }, { status: 500 });
     }
 
-    // Get event
-    const { data: event, error: eventError } = await supabase
-      .from('events')
-      .select('*')
-      .eq('id', eventId)
-      .eq('user_id', user.id)
-      .single();
+    const db = locals.db;
 
-    if (eventError || !event) {
+    // Get event
+    const eventsList = await db
+      .select()
+      .from(events)
+      .where(eq(events.id, eventId))
+      .limit(1);
+
+    const event = eventsList[0];
+
+    if (!event || event.userId !== session.user.id) {
       return json({ error: 'Event not found' }, { status: 404 });
     }
 
     // Get all mappings for this event
-    const { data: mappings, error: mappingsError } = await supabase
-      .from('caldav_event_mappings')
-      .select('*, caldav_connections(*)')
-      .eq('event_id', eventId);
-
-    if (mappingsError) throw mappingsError;
+    const mappings = await db
+      .select()
+      .from(caldavEventMappings)
+      .where(eq(caldavEventMappings.eventId, eventId));
 
     // Delete from all connected CalDAV servers
     let deleteCount = 0;
     let errorCount = 0;
 
-    for (const mapping of mappings || []) {
+    for (const mapping of mappings) {
       try {
-        const connection = (mapping as any).caldav_connections;
+        // Get the connection for this mapping
+        const connections = await db
+          .select()
+          .from(caldavConnections)
+          .where(eq(caldavConnections.id, mapping.caldavConnectionId))
+          .limit(1);
+
+        const connection = connections[0];
+
         if (connection && connection.enabled) {
           await deleteEventFromCalDAV(connection, mapping);
           deleteCount++;
         }
 
         // Remove mapping
-        await supabase
-          .from('caldav_event_mappings')
-          .delete()
-          .eq('id', mapping.id);
+        await db.delete(caldavEventMappings).where(eq(caldavEventMappings.id, mapping.id));
       } catch (err) {
         console.error(`[CalDAV Delete] Failed to delete from mapping ${mapping.id}:`, err);
         errorCount++;
@@ -101,10 +101,7 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
     }
 
     // Delete the event from our database
-    await supabase
-      .from('events')
-      .delete()
-      .eq('id', eventId);
+    await db.delete(events).where(eq(events.id, eventId));
 
     return json({
       success: true,

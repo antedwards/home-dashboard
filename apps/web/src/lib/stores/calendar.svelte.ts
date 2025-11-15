@@ -6,42 +6,42 @@ export class CalendarStore {
   currentView = $state<'day' | 'week' | 'month'>('week');
   currentDate = $state(new Date());
   events = $state<CalendarEvent[]>([]);
-  familyMembers = $state<User[]>([]);
+  householdMembers = $state<User[]>([]);
   categories = $state<Category[]>([]);
   loading = $state(false);
   error = $state<string | null>(null);
-  familyId = $state<string | null>(null);
+  householdId = $state<string | null>(null);
   userId = $state<string | null>(null);
 
-  // Initialize the store with user and family data
-  async initialize(userId: string, familyId: string) {
+  // Initialize the store with user and household data
+  async initialize(userId: string, householdId: string) {
     this.userId = userId;
-    this.familyId = familyId;
+    this.householdId = householdId;
     await Promise.all([
       this.loadEvents(),
-      this.loadFamilyMembers(),
+      this.loadHouseholdMembers(),
       this.loadCategories()
     ]);
   }
 
-  // Load family members
-  async loadFamilyMembers() {
-    if (!this.familyId) return;
+  // Load household members
+  async loadHouseholdMembers() {
+    if (!this.householdId) return;
 
     try {
-      const members = await apiClient.getFamilyMembers(this.familyId);
-      this.familyMembers = members;
+      const members = await apiClient.getHouseholdMembers(this.householdId);
+      this.householdMembers = members;
     } catch (err: any) {
-      console.error('Error loading family members:', err);
+      console.error('Error loading household members:', err);
     }
   }
 
   // Load categories
   async loadCategories() {
-    if (!this.familyId) return;
+    if (!this.householdId) return;
 
     try {
-      const cats = await apiClient.getCategories(this.familyId);
+      const cats = await apiClient.getCategories(this.householdId);
       this.categories = cats;
     } catch (err: any) {
       console.error('Error loading categories:', err);
@@ -50,11 +50,11 @@ export class CalendarStore {
 
   // Create a new category
   async createCategory(name: string, color: string): Promise<Category> {
-    if (!this.familyId) throw new Error('No family ID');
+    if (!this.householdId) throw new Error('No household ID');
 
     try {
       const newCategory = await apiClient.createCategory({
-        family_id: this.familyId,
+        household_id: this.householdId,
         name,
         color
       });
@@ -68,7 +68,7 @@ export class CalendarStore {
 
   // Load events for current month
   async loadEvents() {
-    if (!this.familyId) return;
+    if (!this.householdId) return;
 
     this.loading = true;
     this.error = null;
@@ -94,7 +94,7 @@ export class CalendarStore {
 
   // Create a new event
   async addEvent(eventData: Partial<CalendarEvent>) {
-    if (!this.familyId || !this.userId) return;
+    if (!this.householdId || !this.userId) return;
 
     this.loading = true;
     this.error = null;
@@ -226,7 +226,41 @@ export class CalendarStore {
   }
 
   // Helper to convert database event to CalendarEvent
-  private convertToCalendarEvent(dbEvent: any): CalendarEvent {
+  private convertToCalendarEvent = (dbEvent: any): CalendarEvent => {
+    const categoryId = dbEvent.category_id || dbEvent.categoryId;
+    const category = this.categories.find(c => c.id === categoryId);
+
+    // Convert household member attendees to User objects
+    const householdAttendees = dbEvent.attendees?.map((attendee: any) => ({
+      id: attendee.id || attendee.user_id,
+      name: attendee.name,
+      email: attendee.email,
+      avatar: attendee.avatar_url || attendee.avatar,
+      color: attendee.color || '#3b82f6',
+    })) || [];
+
+    // Get external attendees (from CalDAV sync)
+    const externalAttendees = dbEvent.external_attendees || dbEvent.externalAttendees || [];
+
+    // Merge attendees: Create User objects for all external attendees
+    // If an external attendee matches a household member, use the household member data (with avatar)
+    // Otherwise, create a basic User object from the external attendee
+    const allAttendees = [...householdAttendees];
+    const householdEmails = new Set(householdAttendees.map((a: any) => a.email.toLowerCase()));
+
+    for (const extAttendee of externalAttendees) {
+      // Only add external attendees that aren't already in household attendees
+      if (!householdEmails.has(extAttendee.email.toLowerCase())) {
+        allAttendees.push({
+          id: extAttendee.email, // Use email as ID for non-household members
+          name: extAttendee.name || extAttendee.email,
+          email: extAttendee.email,
+          avatar: undefined, // No avatar for external attendees
+          color: '#9ca3af', // Gray color for external attendees
+        });
+      }
+    }
+
     return {
       id: dbEvent.id,
       title: dbEvent.title,
@@ -235,9 +269,15 @@ export class CalendarStore {
       end: new Date(dbEvent.end_time || dbEvent.endTime),
       allDay: dbEvent.all_day ?? dbEvent.allDay,
       location: dbEvent.location,
-      categoryId: dbEvent.category_id || dbEvent.categoryId,
+      categoryId,
       userId: dbEvent.user_id || dbEvent.userId,
       attendeeIds: dbEvent.attendee_ids || dbEvent.attendeeIds,
+      attendees: allAttendees, // Merged household + external attendees
+      externalAttendees, // Keep original external attendees data
+      organizerEmail: dbEvent.organizer_email || dbEvent.organizerEmail,
+      organizerName: dbEvent.organizer_name || dbEvent.organizerName,
+      metadata: dbEvent.metadata || {},
+      color: category?.color || '#3b82f6', // Default blue if no category
     };
   }
 }
